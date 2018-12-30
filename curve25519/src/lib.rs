@@ -2,10 +2,204 @@
 #![allow(non_camel_case_types)]
 #![allow(non_snake_case)]
 
+use rand::{rngs::OsRng, RngCore};
+use std::fmt::{self, Display};
+
 include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
 
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum CurveError {
+  VrfSignatureVerificationFailed,
+  CalculateSignatureFaild,
+}
+
+impl Display for CurveError {
+  fn fmt(
+    &self,
+    f: &mut fmt::Formatter<'_>,
+  ) -> std::result::Result<(), std::fmt::Error> {
+    use crate::CurveError::*;
+    match self {
+      VrfSignatureVerificationFailed => write!(f, "Invalid signature"),
+      CalculateSignatureFaild => {
+        write!(f, "Error While Calculating the Signature")
+      },
+    }
+  }
+}
+
+pub struct KeyPair {
+  pub private_key: [u8; 32],
+  pub public_key: [u8; 32],
+}
+
+pub struct Curve25519 {
+  provider: Box<dyn RngCore>,
+}
+
+impl Default for Curve25519 {
+  /// Create the `Curve25519` with `OsRng` as a provider
+  ///
+  /// ### Paincs
+  /// if it is unable to create the `OsRng`
+  fn default() -> Self {
+    let os_rng = OsRng::new().unwrap();
+    Self::new(Box::new(os_rng))
+  }
+}
+
+impl Curve25519 {
+  pub fn new(provider: Box<dyn RngCore>) -> Self { Self { provider } }
+
+  /// Generates a Curve25519 keypair.
+  pub fn generate_key_pair(&mut self) -> KeyPair {
+    let mut private_key = [0; 32];
+    let mut public_key = [0; 32];
+    let mut basepoint = [0; 32];
+    basepoint[0] = 9;
+    self.provider.fill_bytes(&mut private_key);
+    // curve25519 secret key bit manip.
+    private_key[0] &= 248;
+    private_key[31] &= 127;
+    private_key[31] |= 64;
+    unsafe {
+      curve25519_donna(
+        public_key.as_mut_ptr(),
+        private_key.as_ptr(),
+        basepoint.as_ptr(),
+      )
+    };
+    KeyPair {
+      private_key,
+      public_key,
+    }
+  }
+
+  /// Calculates an ECDH agreement.
+  ///
+  /// `public_key` & `private_key` must be a 32 bit long.
+  ///
+  /// the `public_key` is The Curve25519 (typically remote party's) public key
+  /// and the `private_key` is The Curve25519 (typically yours) private key.
+  ///
+  /// you will get a 32-byte shared secret.
+  pub fn calculate_agreement(&self, key_pair: &KeyPair) -> [u8; 32] {
+    let mut shared_key = [0; 32];
+    unsafe {
+      curve25519_donna(
+        shared_key.as_mut_ptr(),
+        key_pair.private_key.as_ptr(),
+        key_pair.public_key.as_ptr(),
+      )
+    };
+    shared_key
+  }
+
+  /// Calculates a Curve25519 signature.
+  ///
+  /// you will need The private Curve25519 key to create the signature with.
+  /// and The message to sign.
+  ///
+  /// and you will get a 64-byte signature.
+  pub fn calculate_signature(
+    &mut self,
+    private_key: &[u8; 32],
+    msg: &[u8],
+  ) -> Result<[u8; 64], CurveError> {
+    let mut signature = [0; 64];
+    let mut random = [0; 64];
+    self.provider.fill_bytes(&mut random);
+    let result = unsafe {
+      xed25519_sign(
+        signature.as_mut_ptr(),
+        private_key.as_ptr(),
+        msg.as_ptr(),
+        msg.len() as u64,
+        random.as_ptr(),
+      )
+    };
+
+    if result == 0 {
+      Ok(signature)
+    } else {
+      Err(CurveError::CalculateSignatureFaild)
+    }
+  }
+
+  /// Verify a Curve25519 signature.
+  pub fn verify_signature(
+    &self,
+    public_key: &[u8; 32],
+    msg: &[u8],
+    signature: &[u8; 64],
+  ) -> bool {
+    unsafe {
+      curve25519_verify(
+        signature.as_ptr(),
+        public_key.as_ptr(),
+        msg.as_ptr(),
+        msg.len() as u64,
+      ) == 0
+    }
+  }
+
+  /// Calculates a Unique Curve25519 signature.
+  pub fn calculate_vrf_signature(
+    &mut self,
+    private_key: &[u8; 32],
+    msg: &[u8],
+  ) -> Result<[u8; 96], CurveError> {
+    let mut signature = [0; 96];
+    let mut random = [0; 64];
+    self.provider.fill_bytes(&mut random);
+    let result = unsafe {
+      generalized_xveddsa_25519_sign(
+        signature.as_mut_ptr(),
+        private_key.as_ptr(),
+        msg.as_ptr(),
+        msg.len() as u64,
+        random.as_ptr(),
+        std::ptr::null(),
+        0,
+      )
+    };
+
+    if result == 0 {
+      Ok(signature)
+    } else {
+      Err(CurveError::CalculateSignatureFaild)
+    }
+  }
+
+  /// Verify a Unique Curve25519 signature.
+  pub fn verify_vrf_signature(
+    &self,
+    public_key: &[u8; 32],
+    msg: &[u8],
+    signature: &[u8; 96],
+  ) -> Result<[u8; 32], CurveError> {
+    let mut vrf = [0; 32];
+    let result = unsafe {
+      generalized_xveddsa_25519_verify(
+        vrf.as_mut_ptr(),
+        signature.as_ptr(),
+        public_key.as_ptr(),
+        msg.as_ptr(),
+        msg.len() as u64,
+        std::ptr::null(),
+        0,
+      )
+    };
+    if result == 0 {
+      Ok(vrf)
+    } else {
+      Err(CurveError::VrfSignatureVerificationFailed)
+    }
+  }
+}
+
 #[cfg(test)]
-mod test_curve25519 {
+mod test_curve25519_bindgen {
   use super::*;
 
   #[test]
@@ -91,31 +285,19 @@ mod test_curve25519 {
       );
       assert_eq!(signature.to_vec(), signature_correct.to_vec());
       // XEdDSA verify #1
-      let result = xed25519_verify(
-        signature.as_ptr(),
-        pubkey.as_ptr(),
-        msg.as_ptr(),
-        200,
-      );
+      let result =
+        xed25519_verify(signature.as_ptr(), pubkey.as_ptr(), msg.as_ptr(), 200);
       assert_eq!(result, 0);
       signature[0] ^= 1;
       // XEdDSA verify #2
-      let result = xed25519_verify(
-        signature.as_ptr(),
-        pubkey.as_ptr(),
-        msg.as_ptr(),
-        200,
-      );
+      let result =
+        xed25519_verify(signature.as_ptr(), pubkey.as_ptr(), msg.as_ptr(), 200);
       assert_ne!(result, 0);
 
       let pubkey = [0xFF; 32];
       // XEdDSA verify #3
-      let result = xed25519_verify(
-        signature.as_ptr(),
-        pubkey.as_ptr(),
-        msg.as_ptr(),
-        200,
-      );
+      let result =
+        xed25519_verify(signature.as_ptr(), pubkey.as_ptr(), msg.as_ptr(), 200);
       assert_ne!(result, 0);
     }
   }

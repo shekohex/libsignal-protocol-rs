@@ -5,6 +5,7 @@ authors = ["Shady Khalifa <shekohex@gmail.com>"]
 edition = "2018"
 
 [dependencies]
+rand = "0.6.1"
 
 [build-dependencies]
 bindgen ="0.46.0"
