@@ -5,3 +5,6 @@ authors = ["Shady Khalifa <shekohex@gmail.com>"]
 edition = "2018"
 
 [dependencies]
+curve25519 = { path = './curve25519' }
+failure = "0.1.4"
+sha2 = "0.8.0"
