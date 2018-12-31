@@ -8,3 +8,4 @@ edition = "2018"
 curve25519 = { path = './curve25519' }
 failure = "0.1.4"
 sha2 = "0.8.0"
+getset = "0.0.6"
