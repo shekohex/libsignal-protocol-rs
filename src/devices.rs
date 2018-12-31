@@ -1,11 +1,15 @@
-use crate::{identity_key::IdentityKey, utils};
+use crate::{ecc::ECKey, identity_key::IdentityKey, utils};
+use getset::Getters;
 use sha2::digest::Digest;
+
 const VERSION: &[u8] = b"DeviceConsistencyCommitment_V0";
 const CODE_VERSION: u16 = 0;
 
-#[derive(Copy, Clone, Debug, Default, Eq, Ord, PartialOrd, Hash)]
+#[derive(Copy, Clone, Debug, Default, Eq, Ord, PartialOrd, Hash, Getters)]
 pub struct DeviceConsistencySignature<'a> {
+  #[get = "pub"]
   signature: &'a [u8],
+  #[get = "pub"]
   vrf_output: &'a [u8],
 }
 
@@ -16,19 +20,21 @@ impl<'a> DeviceConsistencySignature<'a> {
       vrf_output,
     }
   }
-
-  pub fn get_signature(&self) -> &'a [u8] { &self.signature }
-
-  pub fn get_vrf_output(&self) -> &'a [u8] { &self.vrf_output }
 }
 
+#[derive(Getters, Debug)]
 pub struct DeviceConsistencyCommitment {
+  #[get = "pub"]
   generation: u32,
+  #[get = "pub"]
   serialized: Vec<u8>,
 }
 
 impl DeviceConsistencyCommitment {
-  pub fn new(generation: u32, mut identity_keys: Vec<IdentityKey>) -> Self {
+  pub fn new(
+    generation: u32,
+    mut identity_keys: Vec<IdentityKey<impl ECKey>>,
+  ) -> Self {
     identity_keys.sort(); // sort it
     let mut msg_digest = sha2::Sha512::default();
     msg_digest.input(VERSION);
@@ -63,10 +69,11 @@ impl DeviceConsistencyCodeGenerator {
     msg_digest.input(bytes);
     msg_digest.input(commitment.as_bytes());
     for signature in signatures {
-      msg_digest.input(signature.get_vrf_output());
+      msg_digest.input(signature.vrf_output());
     }
     let hash = msg_digest.result().to_vec();
-    let digits = Self::get_encoded_chunk(&hash, 0) + &Self::get_encoded_chunk(&hash, 5);
+    let digits =
+      Self::get_encoded_chunk(&hash, 0) + &Self::get_encoded_chunk(&hash, 5);
     digits[0..6].to_string()
   }
 
@@ -77,7 +84,13 @@ impl DeviceConsistencyCodeGenerator {
 }
 
 impl<'a> PartialEq for DeviceConsistencySignature<'a> {
-  fn eq(&self, other: &Self) -> bool {
-    self.get_vrf_output() == other.get_vrf_output()
-  }
+  fn eq(&self, other: &Self) -> bool { self.vrf_output() == other.vrf_output() }
+}
+
+#[cfg(test)]
+mod test_devices {
+  use super::*;
+
+  #[test]
+  fn test_device_consistency() {}
 }
