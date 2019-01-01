@@ -77,8 +77,18 @@ impl<E: ECKey> IdentityKeyPair<E> {
     let prv_key = Curve::decode_private_point(&private_key);
     let pair = IdentityKeyPair {
       private_key: prv_key,
-      public_key: pub_key,
+      public_key: pub_key, // FIXME: error in compile
     };
+    // the error message:
+    //
+    // error[E0308]: mismatched types
+    //   --> src/identity_key.rs:80:19
+    //    |
+    // 80 |       public_key: pub_key,
+    //    |                   ^^^^^^^ expected opaque type, found a different opaque type
+    //    |
+    //    = note: expected type `impl ecc::ECKey` (opaque type)
+    //               found type `impl ecc::ECKey` (opaque type)
     Ok(pair)
   }
 
