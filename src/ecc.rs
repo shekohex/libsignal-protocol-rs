@@ -79,14 +79,14 @@ impl Curve {
   ) -> Result<impl ECKey, SignalError> {
     if bytes.len() - offset < 1 {
       return Err(SignalError::InvalidKey(
-        "No key type identifier or bad offset",
+        "No key type identifier or bad offset".to_string(),
       ));
     }
     let k_type = bytes[offset]; // & 0xFF clippy says that ineffective
     match k_type {
       DJB_TYPE => {
         if bytes.len() - offset < 33 {
-          Err(SignalError::InvalidKey("Bad key length"))
+          Err(SignalError::InvalidKey("Bad key length".to_string()))
         } else {
           let mut key_bytes = [0; 32];
           let len = key_bytes.len() + offset;
@@ -94,7 +94,7 @@ impl Curve {
           Ok(DjbECKey::new(key_bytes.to_vec(), false))
         }
       },
-      _ => Err(SignalError::InvalidKey("Bad key type")),
+      _ => Err(SignalError::InvalidKey("Bad key type".to_string())),
     }
   }
 
@@ -108,10 +108,10 @@ impl Curve {
   ) -> Result<[u8; 32], SignalError> {
     if public_key.get_type() != private_key.get_type() {
       Err(SignalError::InvalidKey(
-        "Public and private keys must be of the same type!",
+        "Public and private keys must be of the same type!".to_string(),
       ))
     } else if public_key.get_type() != DJB_TYPE {
-      Err(SignalError::InvalidKey("Unknown key type"))
+      Err(SignalError::InvalidKey("Unknown key type".to_string()))
     } else {
       let curve25519 = Curve25519::default();
       let pub_key = Self::key_from_vec(public_key);
@@ -135,7 +135,7 @@ impl Curve {
       let result = curve25519.verify_signature(&pub_key, message, signature);
       Ok(result)
     } else {
-      Err(SignalError::InvalidKey("Unknown Key type"))
+      Err(SignalError::InvalidKey("Unknown Key type".to_string()))
     }
   }
 
@@ -148,11 +148,10 @@ impl Curve {
       let prv_key = Self::key_from_vec(&signing_key);
       let result = curve25519
         .calculate_signature(&prv_key, message)
-        .map_err(|_| SignalError::SignatureFailure)
-        .unwrap();
+        .map_err(|_| SignalError::SignatureFailure)?;
       Ok(result)
     } else {
-      Err(SignalError::InvalidKey("Unknown Key type"))
+      Err(SignalError::InvalidKey("Unknown Key type".to_string()))
     }
   }
 
@@ -166,11 +165,10 @@ impl Curve {
       let pub_key = Self::key_from_vec(&signing_key);
       let result = curve25519
         .verify_vrf_signature(&pub_key, message, signature)
-        .map_err(|_| SignalError::SignatureFailure)
-        .unwrap();
+        .map_err(|_| SignalError::SignatureFailure)?;
       Ok(result)
     } else {
-      Err(SignalError::InvalidKey("Unknown Key type"))
+      Err(SignalError::InvalidKey("Unknown Key type".to_string()))
     }
   }
 
@@ -183,11 +181,10 @@ impl Curve {
       let prv_key = Self::key_from_vec(&signing_key);
       let result = curve25519
         .calculate_vrf_signature(&prv_key, message)
-        .map_err(|_| SignalError::SignatureFailure)
-        .unwrap();
+        .map_err(|_| SignalError::SignatureFailure)?;
       Ok(result)
     } else {
-      Err(SignalError::InvalidKey("Unknown Key type"))
+      Err(SignalError::InvalidKey("Unknown Key type".to_string()))
     }
   }
 

@@ -1,11 +1,11 @@
 use failure::Fail;
-#[derive(Copy, Clone, Debug, Fail, PartialEq, Eq)]
+#[derive(Clone, Debug, Fail, PartialEq, Eq)]
 pub enum SignalError {
   #[fail(display = "invalid key: {}", _0)]
-  InvalidKey(&'static str),
+  InvalidKey(String),
 
   #[fail(display = "invalid signature: {}", _0)]
-  InvalidSignature(&'static str),
+  InvalidSignature(String),
 
   #[fail(display = "Error while generating signature")]
   SignatureFailure,
