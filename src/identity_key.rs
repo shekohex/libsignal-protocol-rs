@@ -1,5 +1,5 @@
 use crate::{
-  ecc::{Curve, ECKey},
+  ecc::{Curve, DjbECKey, ECKey},
   error::SignalError,
   protos::textsecure,
   utils::ToHex,
@@ -8,6 +8,7 @@ use core::cmp::Ordering;
 use getset::Getters;
 use prost::Message;
 use std::hash::{Hash, Hasher};
+
 #[derive(Clone, Debug, Getters)]
 pub struct IdentityKey<E: ECKey> {
   #[get = "pub"]
@@ -15,9 +16,7 @@ pub struct IdentityKey<E: ECKey> {
 }
 
 impl<E: ECKey> IdentityKey<E> {
-  pub fn new(public_key: impl ECKey) -> IdentityKey<impl ECKey> {
-    IdentityKey { public_key }
-  }
+  pub fn new(public_key: E) -> Self { IdentityKey { public_key } }
 
   pub fn serialize(&self) -> Vec<u8> { self.public_key.serialize() }
 
@@ -49,14 +48,15 @@ impl<E: ECKey> Ord for IdentityKey<E> {
 /// Holder for public and private identity key pair.
 #[derive(Getters, Clone, Debug)]
 pub struct IdentityKeyPair<E: ECKey> {
-  public_key: E,
+  #[get = "pub"]
+  public_key: IdentityKey<E>,
   #[get = "pub"]
   private_key: E,
 }
 
 impl<E: ECKey> IdentityKeyPair<E> {
-  pub fn new(public_key: E, private_key: E) -> IdentityKeyPair<E> {
-    IdentityKeyPair {
+  pub fn new(public_key: IdentityKey<E>, private_key: E) -> Self {
+    Self {
       public_key,
       private_key,
     }
@@ -64,7 +64,7 @@ impl<E: ECKey> IdentityKeyPair<E> {
 
   pub fn from_raw(
     serialized: &[u8],
-  ) -> Result<IdentityKeyPair<impl ECKey>, SignalError> {
+  ) -> Result<IdentityKeyPair<DjbECKey>, SignalError> {
     let structure = textsecure::IdentityKeyPairStructure::decode(serialized)
       .map_err(|e| SignalError::InvalidKey(e.to_string()))?;
     let public_key = structure.public_key.ok_or_else(|| {
@@ -75,24 +75,22 @@ impl<E: ECKey> IdentityKeyPair<E> {
     })?;
     let pub_key = Curve::decode_point(&public_key, 0)?;
     let prv_key = Curve::decode_private_point(&private_key);
-    let pair = IdentityKeyPair {
+    Ok(IdentityKeyPair {
+      public_key: IdentityKey {
+        public_key: pub_key,
+      },
       private_key: prv_key,
-      public_key: pub_key, // FIXME: error in compile
-    };
-    // the error message:
-    //
-    // error[E0308]: mismatched types
-    //   --> src/identity_key.rs:80:19
-    //    |
-    // 80 |       public_key: pub_key,
-    //    |                   ^^^^^^^ expected opaque type, found a different opaque type
-    //    |
-    //    = note: expected type `impl ecc::ECKey` (opaque type)
-    //               found type `impl ecc::ECKey` (opaque type)
-    Ok(pair)
+    })
   }
 
-  pub fn public_key(&self) -> &IdentityKey<impl ECKey> {
-    &IdentityKey::new(self.public_key)
+  pub fn serialize(&self) -> Result<Vec<u8>, SignalError> {
+    let mut structure = textsecure::IdentityKeyPairStructure::default();
+    structure.public_key = Some(self.public_key.serialize());
+    structure.private_key = Some(self.private_key.serialize());
+    let mut result = Vec::new();
+    structure
+      .encode(&mut result)
+      .map_err(|e| SignalError::ProtoBufError(e.to_string()))?;
+    Ok(result)
   }
 }

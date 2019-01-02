@@ -5,5 +5,6 @@ pub mod devices;
 pub mod ecc;
 mod error;
 pub mod identity_key;
+pub mod key_helper;
 mod protos;
 mod utils;
