@@ -12,6 +12,7 @@ getset = "0.0.6"
 prost = "0.4.0"
 bytes = "0.4.11"
 prost-derive = "0.4.0"
+rand = "0.6.1"
 
 [build-dependencies]
 prost-build = "0.4.0"
