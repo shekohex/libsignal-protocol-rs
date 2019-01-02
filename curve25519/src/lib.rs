@@ -33,23 +33,23 @@ pub struct KeyPair {
   pub public_key: [u8; 32],
 }
 
-pub struct Curve25519 {
-  provider: Box<dyn RngCore>,
+pub struct Curve25519<R: RngCore> {
+  provider: R,
 }
 
-impl Default for Curve25519 {
+impl Default for Curve25519<OsRng> {
   /// Create the `Curve25519` with `OsRng` as a provider
   ///
   /// ### Paincs
   /// if it is unable to create the `OsRng`
   fn default() -> Self {
     let os_rng = OsRng::new().unwrap();
-    Self::new(Box::new(os_rng))
+    Self::new(os_rng)
   }
 }
 
-impl Curve25519 {
-  pub fn new(provider: Box<dyn RngCore>) -> Self { Self { provider } }
+impl<R: RngCore> Curve25519<R> {
+  pub fn new(provider: R) -> Self { Self { provider } }
 
   /// Generates a Curve25519 keypair.
   pub fn generate_key_pair(&mut self) -> KeyPair {
