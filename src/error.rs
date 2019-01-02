@@ -9,4 +9,7 @@ pub enum SignalError {
 
   #[fail(display = "Error while generating signature")]
   SignatureFailure,
+
+  #[fail(display = "Protocol Buffer Error: {}", _0)]
+  ProtoBufError(String),
 }
