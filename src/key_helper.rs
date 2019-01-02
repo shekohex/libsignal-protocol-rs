@@ -18,13 +18,13 @@ impl KeyHelper {
   }
 
   /// Generate a registration ID.
-  /// 
+  ///
   /// Clients should only do this once, at install time.
   ///
-  /// if `extend_range` is `false`, the generated registration ID is sized to require the
-  /// minimal possible protobuf encoding overhead. Specify `true` if the caller
-  /// needs the full range of `u64::max_value()` _as a seed_ at the cost of slightly higher encoding
-  /// overhead.
+  /// if `extend_range` is `false`, the generated registration ID is sized to
+  /// require the minimal possible protobuf encoding overhead. Specify `true`
+  /// if the caller needs the full range of `u64::max_value()` _as a seed_ at
+  /// the cost of slightly higher encoding overhead.
   pub fn generate_registration_id(extend_range: bool) -> u32 {
     let mut rng = if extend_range {
       SmallRng::seed_from_u64(u64::max_value() - 1)
