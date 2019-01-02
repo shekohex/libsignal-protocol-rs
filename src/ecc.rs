@@ -10,8 +10,11 @@ pub trait ECKey {
   fn get_key(&self) -> Vec<u8>;
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Getters)]
 pub struct ECKeyPair<K: ECKey> {
+  #[get = "pub"]
   private_key: K,
+  #[get = "pub"]
   public_key: K,
 }
 
@@ -23,9 +26,9 @@ impl<K: ECKey> ECKeyPair<K> {
     }
   }
 
-  pub fn get_private_key(&self) -> &impl ECKey { &self.private_key }
+  pub fn into_public_key(self) -> K { self.public_key }
 
-  pub fn get_public_key(&self) -> &impl ECKey { &self.public_key }
+  pub fn into_private_key(self) -> K { self.private_key }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Getters)]
@@ -76,7 +79,7 @@ impl Curve {
   pub fn decode_point(
     bytes: &[u8],
     offset: usize,
-  ) -> Result<impl ECKey, SignalError> {
+  ) -> Result<DjbECKey, SignalError> {
     if bytes.len() - offset < 1 {
       return Err(SignalError::InvalidKey(
         "No key type identifier or bad offset".to_string(),
@@ -98,7 +101,7 @@ impl Curve {
     }
   }
 
-  pub fn decode_private_point(bytes: &[u8]) -> impl ECKey {
+  pub fn decode_private_point(bytes: &[u8]) -> DjbECKey {
     DjbECKey::new(bytes.to_vec(), true)
   }
 
@@ -248,13 +251,13 @@ mod test_curve25519 {
       let alice = Curve::generate_key_pair();
       let bob = Curve::generate_key_pair();
       let shared_alice = Curve::calculate_agreement(
-        bob.get_public_key(),
-        alice.get_private_key(),
+        bob.public_key(),
+        alice.private_key(),
       )
       .unwrap();
       let shared_bob = Curve::calculate_agreement(
-        alice.get_public_key(),
-        bob.get_private_key(),
+        alice.public_key(),
+        bob.private_key(),
       )
       .unwrap();
       assert_eq!(shared_alice, shared_bob);
@@ -313,7 +316,7 @@ mod test_curve25519 {
   #[test]
   fn test_key_too_small() {
     let key_pair = Curve::generate_key_pair();
-    let serialized_public = key_pair.get_public_key().serialize();
+    let serialized_public = key_pair.public_key().serialize();
     Curve::decode_point(&serialized_public, 1).unwrap();
   }
 
@@ -328,7 +331,7 @@ mod test_curve25519 {
   #[test]
   fn test_bad_key_type() {
     let key_pair = Curve::generate_key_pair();
-    let mut serialized_public = key_pair.get_public_key().serialize();
+    let mut serialized_public = key_pair.public_key().serialize();
     serialized_public[0] = 0x01;
     Curve::decode_point(&serialized_public, 0).unwrap();
   }
@@ -336,14 +339,14 @@ mod test_curve25519 {
   #[test]
   fn test_good_key() {
     let key_pair = Curve::generate_key_pair();
-    let serialized_public = key_pair.get_public_key().serialize();
+    let serialized_public = key_pair.public_key().serialize();
     Curve::decode_point(&serialized_public, 0).unwrap();
   }
 
   #[test]
   fn test_extra_key_space() {
     let key_pair = Curve::generate_key_pair();
-    let serialized_public = key_pair.get_public_key().serialize();
+    let serialized_public = key_pair.public_key().serialize();
     let mut extra_space_key = serialized_public[..].to_vec();
     extra_space_key.push(0);
     let result = Curve::decode_point(&extra_space_key, 0)
@@ -355,7 +358,7 @@ mod test_curve25519 {
   #[test]
   fn test_offset_key_space() {
     let key_pair = Curve::generate_key_pair();
-    let serialized_public = key_pair.get_public_key().serialize();
+    let serialized_public = key_pair.public_key().serialize();
     let mut offset_space_key = serialized_public.clone();
     offset_space_key.insert(0, 0);
     let result = Curve::decode_point(&offset_space_key, 1)
