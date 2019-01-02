@@ -146,7 +146,7 @@ impl Curve {
     signing_key: impl ECKey,
     message: &[u8],
   ) -> Result<[u8; 64], SignalError> {
-    if signing_key.get_type() != DJB_TYPE {
+    if signing_key.get_type() == DJB_TYPE {
       let mut curve25519 = Curve25519::default();
       let prv_key = Self::key_from_vec(&signing_key);
       let result = curve25519
@@ -163,7 +163,7 @@ impl Curve {
     message: &[u8],
     signature: &[u8; 96],
   ) -> Result<[u8; 32], SignalError> {
-    if signing_key.get_type() != DJB_TYPE {
+    if signing_key.get_type() == DJB_TYPE {
       let curve25519 = Curve25519::default();
       let pub_key = Self::key_from_vec(&signing_key);
       let result = curve25519
@@ -179,7 +179,7 @@ impl Curve {
     signing_key: impl ECKey,
     message: &[u8],
   ) -> Result<[u8; 96], SignalError> {
-    if signing_key.get_type() != DJB_TYPE {
+    if signing_key.get_type() == DJB_TYPE {
       let mut curve25519 = Curve25519::default();
       let prv_key = Self::key_from_vec(&signing_key);
       let result = curve25519
@@ -250,16 +250,12 @@ mod test_curve25519 {
     for _ in 0..50 {
       let alice = Curve::generate_key_pair();
       let bob = Curve::generate_key_pair();
-      let shared_alice = Curve::calculate_agreement(
-        bob.public_key(),
-        alice.private_key(),
-      )
-      .unwrap();
-      let shared_bob = Curve::calculate_agreement(
-        alice.public_key(),
-        bob.private_key(),
-      )
-      .unwrap();
+      let shared_alice =
+        Curve::calculate_agreement(bob.public_key(), alice.private_key())
+          .unwrap();
+      let shared_bob =
+        Curve::calculate_agreement(alice.public_key(), bob.private_key())
+          .unwrap();
       assert_eq!(shared_alice, shared_bob);
     }
   }
