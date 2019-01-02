@@ -52,8 +52,6 @@ impl DeviceConsistencyCommitment {
   pub fn into_bytes(self) -> Vec<u8> { self.serialized }
 
   pub fn as_bytes(&self) -> &[u8] { &self.serialized }
-
-  pub fn get_generation(&self) -> u32 { self.generation }
 }
 
 pub struct DeviceConsistencyCodeGenerator;
@@ -89,8 +87,6 @@ impl<'a> PartialEq for DeviceConsistencySignature<'a> {
 
 #[cfg(test)]
 mod test_devices {
-  use super::*;
-
   #[test]
   fn test_device_consistency() {}
 }
