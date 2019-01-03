@@ -3,8 +3,8 @@ use getset::Getters;
 use hmac::{Hmac, Mac};
 use sha2::Sha256;
 
-const DERIVED_ROOT_SECRETS_SIZE: u8 = 64;
-const DERIVED_MESSAGE_SECRETS_SIZE: u8 = 80;
+pub const DERIVED_MESSAGE_SECRETS_SIZE: u8 = 80;
+pub const DERIVED_ROOT_SECRETS_SIZE: u8 = 64;
 const DERIVED_MESSAGE_SECRETS_CIPHER_KEY_LENGTH: u8 = 32;
 const DERIVED_MESSAGE_SECRETS_MAC_KEY_LENGTH: u8 = 32;
 const DERIVED_MESSAGE_SECRETS_IV_LENGTH: u8 = 16;
@@ -14,7 +14,7 @@ const HKDF_HASH_OUTPUT_SIZE: u8 = 32;
 type HmacSha256 = Hmac<Sha256>;
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Getters)]
-struct DerivedRootSecrets {
+pub struct DerivedRootSecrets {
   #[get = "pub"]
   root_key: Vec<u8>,
   #[get = "pub"]
@@ -23,7 +23,7 @@ struct DerivedRootSecrets {
 
 impl DerivedRootSecrets {
   pub fn new(okm: &[u8]) -> Result<Self, SignalError> {
-    let len = DERIVED_ROOT_SECRETS_SIZE as usize;
+    let len = (DERIVED_ROOT_SECRETS_SIZE / 2) as usize;
     if okm.len() < len {
       return Err(SignalError::BufferTooSmall(
         DERIVED_ROOT_SECRETS_SIZE as usize,
@@ -38,7 +38,7 @@ impl DerivedRootSecrets {
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Getters)]
-struct DerivedMessageSecrets {
+pub struct DerivedMessageSecrets {
   /// AES Key
   #[get = "pub"]
   cipher_key: Vec<u8>,
