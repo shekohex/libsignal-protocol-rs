@@ -143,12 +143,12 @@ impl Curve {
   }
 
   pub fn calculate_signature(
-    signing_key: impl ECKey,
+    signing_key: &impl ECKey,
     message: &[u8],
   ) -> Result<[u8; 64], SignalError> {
     if signing_key.get_type() == DJB_TYPE {
       let mut curve25519 = Curve25519::default();
-      let prv_key = Self::key_from_vec(&signing_key);
+      let prv_key = Self::key_from_vec(signing_key);
       let result = curve25519
         .calculate_signature(&prv_key, message)
         .map_err(|_| SignalError::SignatureFailure)?;
@@ -159,13 +159,13 @@ impl Curve {
   }
 
   pub fn verify_vrf_signature(
-    signing_key: impl ECKey,
+    signing_key: &impl ECKey,
     message: &[u8],
     signature: &[u8; 96],
   ) -> Result<[u8; 32], SignalError> {
     if signing_key.get_type() == DJB_TYPE {
       let curve25519 = Curve25519::default();
-      let pub_key = Self::key_from_vec(&signing_key);
+      let pub_key = Self::key_from_vec(signing_key);
       let result = curve25519
         .verify_vrf_signature(&pub_key, message, signature)
         .map_err(|_| SignalError::SignatureFailure)?;
@@ -176,12 +176,12 @@ impl Curve {
   }
 
   pub fn calculate_vrf_signature(
-    signing_key: impl ECKey,
+    signing_key: &impl ECKey,
     message: &[u8],
   ) -> Result<[u8; 96], SignalError> {
     if signing_key.get_type() == DJB_TYPE {
       let mut curve25519 = Curve25519::default();
-      let prv_key = Self::key_from_vec(&signing_key);
+      let prv_key = Self::key_from_vec(signing_key);
       let result = curve25519
         .calculate_vrf_signature(&prv_key, message)
         .map_err(|_| SignalError::SignatureFailure)?;

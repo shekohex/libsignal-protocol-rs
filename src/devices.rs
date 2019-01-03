@@ -128,11 +128,11 @@ impl DeviceConsistencyMessage {
     identity_key_pair: &IdentityKeyPair<DjbECKey>,
   ) -> Result<Self, SignalError> {
     let signature_bytes = Curve::calculate_vrf_signature(
-      identity_key_pair.private_key().clone(),
+      identity_key_pair.private_key(),
       commitment.as_bytes(),
     )?;
     let vrf_output_bytes = Curve::verify_vrf_signature(
-      identity_key_pair.public_key().public_key().clone(),
+      identity_key_pair.public_key().public_key(),
       commitment.as_bytes(),
       &signature_bytes,
     )?;
@@ -172,7 +172,7 @@ impl DeviceConsistencyMessage {
     let bytes = &signature_bytes[..96]; // panics if not enough data
     array.copy_from_slice(bytes);
     let vrf_output_bytes = Curve::verify_vrf_signature(
-      identity_pair.public_key().clone(),
+      identity_pair.public_key(),
       commitment.as_bytes(),
       &array,
     )?;
