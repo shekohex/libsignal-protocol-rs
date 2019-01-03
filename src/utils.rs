@@ -1,3 +1,5 @@
+use std::time::{SystemTime, UNIX_EPOCH};
+
 /// A trait for converting a value to hexadecimal encoding
 pub trait ToHex {
   /// Converts the value of `self` to a hex value, returning the owned
@@ -56,6 +58,7 @@ impl ToHex for &str {
   }
 }
 
+#[inline]
 pub(crate) fn byte_array5_to_u64(bytes: &[u8], offset: usize) -> u64 {
   (bytes[offset].wrapping_shl(32)
     | bytes[offset + 1].wrapping_shl(24)
@@ -65,15 +68,59 @@ pub(crate) fn byte_array5_to_u64(bytes: &[u8], offset: usize) -> u64 {
     .into()
 }
 
+/// Compare `S1` and `S2`, returning less than, equal to or
+/// greater than zero if `S1` is lexicographically less than,
+/// equal to or greater than `S2`.
+#[inline]
+pub(crate) fn strcmp(s1: &str, s2: &str) -> isize {
+  use std::cmp;
+  let mlen = cmp::min(s1.len(), s2.len());
+  let b1 = s1.as_bytes();
+  let b2 = s2.as_bytes();
+  for i in 0..mlen {
+    let c1 = b1[i] as i8;
+    let c2 = b2[i] as i8;
+    if c1 != c2 {
+      return (c1.wrapping_sub(c2)) as isize;
+    }
+  }
+  (s1.len().wrapping_sub(s2.len())) as isize
+}
+
+pub(crate) fn current_timestamp_ms() -> u64 {
+  let start = SystemTime::now();
+  let since_the_epoch = start
+    .duration_since(UNIX_EPOCH)
+    .expect("Time went backwards");
+  since_the_epoch.as_secs() * 1000 + u64::from(since_the_epoch.subsec_millis())
+}
+
 #[cfg(test)]
 mod test_to_hex {
-  use super::ToHex;
+  use super::*;
 
   #[test]
-  pub fn test_to_hex() {
+  fn test_to_hex() {
     assert_eq!("foobar".to_hex(), "666f6f626172");
     assert_eq!(b"foobar".to_hex(), "666f6f626172");
     assert_eq!(String::from("foobar").as_bytes().to_hex(), "666f6f626172");
     assert_eq!(b"foobar".to_vec().to_hex(), "666f6f626172");
+  }
+
+  #[test]
+  fn test_strcmp() {
+    assert! {
+      strcmp("test", "test") == 0
+    }
+    assert! {
+      strcmp("testing", "test") > 0
+    }
+    assert! {
+      strcmp("test", "testing") < 0
+    }
+    assert! {
+      // Test non ascii
+      strcmp("test ♥", "testing") < 0
+    }
   }
 }
