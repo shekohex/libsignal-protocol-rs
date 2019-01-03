@@ -7,4 +7,5 @@ mod error;
 pub mod identity_key;
 pub mod key_helper;
 mod protos;
+pub mod state;
 mod utils;
