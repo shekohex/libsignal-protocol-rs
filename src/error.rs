@@ -12,4 +12,10 @@ pub enum SignalError {
 
   #[fail(display = "Protocol Buffer Error: {}", _0)]
   ProtoBufError(String),
+
+  #[fail(
+    display = "The Given Buffer was too small expected: {} bytes at least",
+    _0
+  )]
+  BufferTooSmall(usize),
 }
