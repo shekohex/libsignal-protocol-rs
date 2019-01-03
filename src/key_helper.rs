@@ -18,7 +18,7 @@ impl KeyHelper {
   ///
   /// Clients should only do this once, at install time.
   pub fn generate_identity_key_pair() -> IdentityKeyPair<DjbECKey> {
-    let key_pair = Curve::generate_key_pair();
+    let key_pair: ECKeyPair<DjbECKey> = Curve::generate_key_pair();
     let public_key = IdentityKey::new(key_pair.public_key().clone());
     IdentityKeyPair::new(public_key, key_pair.private_key().clone())
   }
