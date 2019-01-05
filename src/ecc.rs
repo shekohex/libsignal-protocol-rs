@@ -4,7 +4,7 @@ use getset::Getters;
 
 const DJB_TYPE: u8 = 0x05;
 
-pub trait ECKey {
+pub trait ECKey: PartialEq {
   fn serialize(&self) -> Vec<u8>;
   fn get_type(&self) -> u8;
   fn get_key(&self) -> Vec<u8>;
