@@ -7,6 +7,9 @@ pub enum SignalError {
   #[fail(display = "invalid signature: {}", _0)]
   InvalidSignature(String),
 
+  #[fail(display = "invalid SessionVersion: {}", _0)]
+  InvalidSessionVersion(String),
+
   #[fail(display = "Error while generating signature")]
   SignatureFailure,
 

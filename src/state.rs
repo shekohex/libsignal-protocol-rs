@@ -2,12 +2,19 @@ use crate::{
   ecc::{Curve, DjbECKey, ECKey, ECKeyPair},
   error::SignalError,
   identity_key::{IdentityKey, IdentityKeyPair},
-  protos::textsecure::{PreKeyRecordStructure, SignedPreKeyRecordStructure},
+  kdf::{HKDFv2, HKDFv3, HKDF},
+  protos::textsecure::{
+    session_structure::Chain, PreKeyRecordStructure, SessionStructure,
+    SignedPreKeyRecordStructure,
+  },
+  ratchet::RootKey,
   signal::SignalProtocolAddress,
 };
+use either::Either;
+use getset::Getters;
 use prost::Message;
-
 // const ARCHIVED_STATES_MAX_LENGTH: u8 = 40;
+// const MAX_MESSAGE_KEYS: u8 = 2000;
 
 pub struct PreKeyRecord {
   structure: PreKeyRecordStructure,
@@ -54,6 +61,166 @@ impl PreKeyRecord {
 
 pub struct SignedPreKeyRecord {
   structure: SignedPreKeyRecordStructure,
+}
+
+#[derive(Clone, Debug, Default, Getters)]
+pub struct SessionState {
+  #[get = "pub"]
+  structure: SessionStructure,
+}
+
+impl SessionState {
+  pub fn new() -> Self { Self::default() }
+
+  pub fn with_structure(structure: SessionStructure) -> Self {
+    Self { structure }
+  }
+
+  pub fn from_copy(copy: &Self) -> Self {
+    Self {
+      structure: copy.structure.clone(),
+    }
+  }
+
+  pub fn get_alice_base_key(&self) -> &Option<Vec<u8>> {
+    &self.structure.alice_base_key
+  }
+
+  pub fn set_alice_base_key(&mut self, key: Vec<u8>) {
+    self.structure.alice_base_key = Some(key);
+  }
+
+  pub fn get_session_version(&self) -> u32 {
+    if let Some(ver) = self.structure.session_version {
+      if ver == 0 {
+        2
+      } else {
+        ver
+      }
+    } else {
+      2
+    }
+  }
+
+  pub fn set_session_version(&mut self, ver: u32) {
+    self.structure.session_version = Some(ver);
+  }
+
+  pub fn set_local_identity_key<K: ECKey>(&mut self, key: &IdentityKey<K>) {
+    self.structure.local_identity_public = Some(key.serialize());
+  }
+
+  pub fn set_remote_identity_key<K: ECKey>(&mut self, key: &IdentityKey<K>) {
+    self.structure.remote_identity_public = Some(key.serialize());
+  }
+
+  pub fn get_remote_identity_key<K: ECKey>(&self) -> Option<IdentityKey<K>> {
+    if let Some(key) = &self.structure.remote_identity_public {
+      IdentityKey::from_raw(&key, 0).ok()
+    } else {
+      None
+    }
+  }
+
+  pub fn get_local_identity_key<K: ECKey>(
+    &self,
+  ) -> Result<IdentityKey<K>, SignalError> {
+    if let Some(key) = &self.structure.local_identity_public {
+      IdentityKey::from_raw(&key, 0)
+    } else {
+      Err(SignalError::InvalidKey("Missing LocalKey".to_string()))
+    }
+  }
+
+  pub fn get_previous_counter(&self) -> &Option<u32> {
+    &self.structure.previous_counter
+  }
+
+  pub fn set_previous_counter(&mut self, previous_counter: u32) {
+    self.structure.previous_counter = Some(previous_counter);
+  }
+
+  pub fn get_root_key(
+    &self,
+  ) -> Result<Either<RootKey<HKDFv2>, RootKey<HKDFv3>>, SignalError> {
+    if let Some(key) = &self.structure.root_key {
+      let ver = self.get_session_version();
+      if ver == 2 {
+        Ok(Either::Left(RootKey::new(HKDFv2, key)))
+      } else if ver == 3 {
+        Ok(Either::Right(RootKey::new(HKDFv3, key)))
+      } else {
+        Err(SignalError::InvalidSessionVersion(
+          "Unknown Version (not 2 or 3)".to_string(),
+        ))
+      }
+    } else {
+      Err(SignalError::InvalidSessionVersion(
+        "Missing Version".to_string(),
+      ))
+    }
+  }
+
+  pub fn set_root_key<K: HKDF + Clone>(&mut self, key: &RootKey<K>) {
+    self.structure.remote_identity_public = Some(key.key().to_vec());
+  }
+
+  pub fn get_sender_ratchet_key<K: ECKey>(&self) -> Result<K, SignalError> {
+    if let Some(sender_chain) = &self.structure.sender_chain {
+      if let Some(key) = &sender_chain.sender_ratchet_key {
+        Curve::decode_point(&key, 0)
+      } else {
+        Err(SignalError::InvalidKey(
+          "Missing Sender Retchet Key".to_string(),
+        ))
+      }
+    } else {
+      Err(SignalError::InvalidKey("Missing Sender Chain".to_string()))
+    }
+  }
+
+  pub fn get_sender_ratchet_key_pair<K: ECKey>(
+    &self,
+  ) -> Result<ECKeyPair<K>, SignalError> {
+    let public_key = self.get_sender_ratchet_key::<K>()?;
+    if let Some(sender_chain) = &self.structure.sender_chain {
+      if let Some(key) = &sender_chain.sender_ratchet_key_private {
+        let private_key = Curve::decode_private_point(&key);
+        Ok(ECKeyPair::new(public_key, private_key))
+      } else {
+        Err(SignalError::InvalidKey(
+          "Missing Sender Retchet Private Key".to_string(),
+        ))
+      }
+    } else {
+      Err(SignalError::InvalidKey("Missing Sender Chain".to_string()))
+    }
+  }
+
+  pub fn get_receiver_chain<K: ECKey>(
+    &self,
+    sender_ephemeral: &K,
+  ) -> Option<(Chain, usize)> {
+    let receiver_chains = self.structure.receiver_chains.clone();
+    for (i, receiver_chain) in receiver_chains.into_iter().enumerate() {
+      let chain_sender_ratchet_key =
+        receiver_chain.clone().sender_ratchet_key?;
+      let pub_key: K =
+        Curve::decode_point(&chain_sender_ratchet_key, 0).ok()?;
+      if pub_key == *sender_ephemeral {
+        return Some((receiver_chain, i));
+      }
+    }
+    None
+  }
+
+  pub fn has_receiver_chain<K: ECKey>(&self, sender_ephemeral: &K) -> bool {
+    self.get_receiver_chain(sender_ephemeral).is_some()
+  }
+
+  pub fn has_sender_chain(&self) -> bool {
+    self.structure.sender_chain.is_some()
+  }
 }
 
 /// A `SessionRecord` encapsulates the state of an ongoing session.
@@ -108,7 +275,6 @@ impl SignedPreKeyRecord {
 }
 
 pub struct SessionRecord {}
-
 
 pub enum Direction {
   SENDING,
