@@ -1,5 +1,5 @@
 use crate::{
-  ecc::{Curve, DjbECKey, ECKey},
+  ecc::{Curve, ECKey},
   error::SignalError,
   protos::textsecure,
   utils::ToHex,
@@ -17,6 +17,14 @@ pub struct IdentityKey<E: ECKey> {
 
 impl<E: ECKey> IdentityKey<E> {
   pub fn new(public_key: E) -> Self { IdentityKey { public_key } }
+
+  pub fn from_raw(
+    serialized: &[u8],
+    offset: usize,
+  ) -> Result<Self, SignalError> {
+    let public_key: E = Curve::decode_point(serialized, offset)?;
+    Ok(Self { public_key })
+  }
 
   pub fn serialize(&self) -> Vec<u8> { self.public_key.serialize() }
 
@@ -64,7 +72,7 @@ impl<E: ECKey> IdentityKeyPair<E> {
 
   pub fn from_raw(
     serialized: &[u8],
-  ) -> Result<IdentityKeyPair<DjbECKey>, SignalError> {
+  ) -> Result<IdentityKeyPair<E>, SignalError> {
     let structure = textsecure::IdentityKeyPairStructure::decode(serialized)
       .map_err(|e| SignalError::InvalidKey(e.to_string()))?;
     let public_key = structure.public_key.ok_or_else(|| {
