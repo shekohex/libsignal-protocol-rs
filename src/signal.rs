@@ -1,5 +1,7 @@
-use getset::Getters;
 use std::fmt::{self, Display};
+
+use getset::Getters;
+
 #[derive(Clone, Debug, Default, PartialEq, Eq, Hash, Getters)]
 pub struct SignalProtocolAddress {
   #[get = "pub"]
@@ -16,4 +18,4 @@ impl Display for SignalProtocolAddress {
   fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
     write!(f, "{}:{}", self.name, self.device_id)
   }
-} 
+}

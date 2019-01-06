@@ -1,3 +1,5 @@
+# Rust
+
 /**/target
 **/*.rs.bk
 Cargo.lock
@@ -53,5 +55,10 @@ modules.order
 Module.symvers
 Mkfile.old
 dkms.conf
+
 CMakeFiles
 *Cache.txt
+
+# IDE
+.idea # i love jetbrains, but i don't love these files to be on my repo, sorry :(
+

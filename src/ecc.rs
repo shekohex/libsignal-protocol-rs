@@ -1,6 +1,7 @@
-use crate::error::SignalError;
 use curve25519::{Curve25519, KeyPair};
 use getset::Getters;
+
+use crate::error::SignalError;
 
 const DJB_TYPE: u8 = 0x05;
 
@@ -75,10 +76,7 @@ impl<E: ECKey> Curve<E> {
     )
   }
 
-  pub fn decode_point(
-    bytes: &[u8],
-    offset: usize,
-  ) -> Result<E, SignalError> {
+  pub fn decode_point(bytes: &[u8], offset: usize) -> Result<E, SignalError> {
     if bytes.len() - offset < 1 {
       return Err(SignalError::InvalidKey(
         "No key type identifier or bad offset".to_string(),
@@ -201,9 +199,9 @@ impl<E: ECKey> Curve<E> {
 
 #[cfg(test)]
 mod test_curve25519 {
-  use super::*;
+    use super::*;
 
-  #[test]
+    #[test]
   fn test_agreement() {
     let alice_public = [
       0x05, 0x1b, 0xb7, 0x59, 0x66, 0xf2, 0xe9, 0x3a, 0x36, 0x91, 0xdf, 0xff,
@@ -231,8 +229,10 @@ mod test_curve25519 {
       0xc1, 0xdd, 0x7c, 0xa4, 0xc4, 0x77, 0xe6, 0x29,
     ];
 
-    let alice_public_key: DjbECKey = Curve::decode_point(&alice_public, 0).unwrap();
-    let alice_private_key: DjbECKey = Curve::decode_private_point(&alice_private);
+    let alice_public_key: DjbECKey =
+      Curve::decode_point(&alice_public, 0).unwrap();
+    let alice_private_key: DjbECKey =
+      Curve::decode_private_point(&alice_private);
 
     let bob_public_key = Curve::decode_point(&bob_public, 0).unwrap();
     let bob_private_key = Curve::decode_private_point(&bob_private);
