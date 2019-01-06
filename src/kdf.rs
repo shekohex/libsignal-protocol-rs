@@ -1,7 +1,8 @@
-use crate::error::SignalError;
 use getset::Getters;
 use hmac::{Hmac, Mac};
 use sha2::Sha256;
+
+use crate::error::SignalError;
 
 pub const DERIVED_MESSAGE_SECRETS_SIZE: u8 = 80;
 pub const DERIVED_ROOT_SECRETS_SIZE: u8 = 64;
@@ -75,7 +76,7 @@ impl DerivedMessageSecrets {
   }
 }
 
-pub trait HKDF {
+pub trait HKDF: Clone {
   fn get_iteration_start_offset() -> usize;
   fn get_msg_ver(&self) -> u32;
   fn expand(prk: &[u8], info: Option<&[u8]>, out_size: usize) -> Vec<u8> {
@@ -150,9 +151,9 @@ impl HKDF for HKDFv3 {
 
 #[cfg(test)]
 mod test_kdf {
-  use super::*;
+    use super::*;
 
-  #[test]
+    #[test]
   fn test_vector_v3() {
     let ikm = [
       0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b,

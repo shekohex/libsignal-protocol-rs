@@ -1,18 +1,20 @@
-use crate::{
-  ecc::{Curve, DjbECKey, ECKey, ECKeyPair},
-  error::SignalError,
-  identity_key::{IdentityKey, IdentityKeyPair},
-  kdf::{HKDFv2, HKDFv3, HKDF},
-  protos::textsecure::{
-    session_structure::Chain, PreKeyRecordStructure, SessionStructure,
-    SignedPreKeyRecordStructure,
-  },
-  ratchet::RootKey,
-  signal::SignalProtocolAddress,
-};
 use either::Either;
 use getset::Getters;
 use prost::Message;
+
+use crate::{
+    ecc::{Curve, DjbECKey, ECKey, ECKeyPair},
+    error::SignalError,
+    identity_key::{IdentityKey, IdentityKeyPair},
+    kdf::{HKDF, HKDFv2, HKDFv3},
+    protos::textsecure::{
+        PreKeyRecordStructure,
+        session_structure::{chain, Chain}, SessionStructure, SignedPreKeyRecordStructure,
+  },
+    ratchet::{ChainKey, RootKey},
+    signal::SignalProtocolAddress,
+};
+
 // const ARCHIVED_STATES_MAX_LENGTH: u8 = 40;
 // const MAX_MESSAGE_KEYS: u8 = 2000;
 
@@ -220,6 +222,79 @@ impl SessionState {
 
   pub fn has_sender_chain(&self) -> bool {
     self.structure.sender_chain.is_some()
+  }
+
+  pub fn get_receiver_chain_key<K: ECKey>(
+    &self,
+    sender_ephemeral: &K,
+  ) -> Option<Either<ChainKey<HKDFv2>, ChainKey<HKDFv3>>> {
+    let receiver_chain_index = self.get_receiver_chain(sender_ephemeral);
+    if let Some((chain, _index)) = receiver_chain_index {
+      let ver = self.get_session_version();
+      if ver == 2 {
+        Some(Either::Left(ChainKey::new(
+          HKDFv2,
+          &chain.clone().chain_key?.key?,
+          chain.chain_key?.index?,
+        )))
+      } else if ver == 3 {
+        Some(Either::Right(ChainKey::new(
+          HKDFv3,
+          &chain.clone().chain_key?.key?,
+          chain.chain_key?.index?,
+        )))
+      } else {
+        None
+      }
+    } else {
+      None
+    }
+  }
+
+  pub fn add_receiver_chain_key<K: ECKey, H: HKDF>(
+    &mut self,
+    sender_ratchet_key: &K,
+    chain_key: &ChainKey<H>,
+  ) {
+    let mut chain_key_structure = chain::ChainKey::default();
+    chain_key_structure.key = Some(chain_key.key().to_vec());
+    chain_key_structure.index = Some(*chain_key.index());
+    let mut chain_structure = Chain::default();
+    chain_structure.chain_key = Some(chain_key_structure);
+    chain_structure.sender_ratchet_key = Some(sender_ratchet_key.serialize());
+    self.structure.receiver_chains.push(chain_structure);
+    let chain_size = self.structure.receiver_chains.len();
+    if chain_size > 5 {
+      self.structure.receiver_chains.remove(0);
+    }
+  }
+
+  pub fn set_sender_chain<K: ECKey, H: HKDF>(
+    &mut self,
+    sender_ratchet_key_pair: &ECKeyPair<K>,
+    chain_key: &ChainKey<H>,
+  ) {
+    let mut chain_key_structure = chain::ChainKey::default();
+    chain_key_structure.key = Some(chain_key.key().to_vec());
+    chain_key_structure.index = Some(*chain_key.index());
+    let mut sender_chain_structure: Chain = Chain::default();
+    sender_chain_structure.chain_key = Some(chain_key_structure);
+    sender_chain_structure.sender_ratchet_key =
+      Some(sender_ratchet_key_pair.public_key().serialize().to_vec());
+    sender_chain_structure.sender_ratchet_key_private =
+      Some(sender_ratchet_key_pair.private_key().serialize().to_vec());
+    self.structure.sender_chain = Some(sender_chain_structure);
+  }
+
+  // TODO: add more methods from `libsignal/state/SessionState.java`
+
+  pub fn serialize(&self) -> Result<Vec<u8>, SignalError> {
+    let mut result = Vec::new();
+    self
+      .structure
+      .encode(&mut result)
+      .map_err(|e| SignalError::ProtoBufError(e.to_string()))?;
+    Ok(result)
   }
 }
 
