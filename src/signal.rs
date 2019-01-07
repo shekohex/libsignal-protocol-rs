@@ -19,3 +19,29 @@ impl Display for SignalProtocolAddress {
     write!(f, "{}:{}", self.name, self.device_id)
   }
 }
+
+/// `SessionBuilder` is responsible for setting up encrypted sessions.
+///
+/// Once a session has been established,`SessionCipher` can be used to
+/// encrypt/decrypt messages in that session.
+///
+/// Sessions are built from one of three different possible vectors:
+///
+/// 1. A `PreKeyBundle` retrieved from a server.
+/// 2. A `PreKeySignalMessage` received from a client.
+/// 3. A `KeyExchangeMessages` Two clients can exchange KeyExchange messages to
+/// establish a session.
+///
+/// Sessions are constructed per `recipient_id` + `device_id`
+/// tuple.
+///
+/// Remote logical users are identified by their `recipient_id`, and each
+/// logical `recipient_id` can have multiple physical devices.
+pub struct SessionBuilder {}
+
+/// The main entry point for Signal Protocol encrypt/decrypt operations.
+///
+/// Once a session has been established with `SessionBuilder`,
+/// this helper can be used for all encrypt/decrypt operations within
+/// that session.
+pub struct SessionCipher {}
