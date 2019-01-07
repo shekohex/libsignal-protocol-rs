@@ -3,16 +3,16 @@ use getset::Getters;
 use prost::Message;
 
 use crate::{
-    ecc::{Curve, DjbECKey, ECKey, ECKeyPair},
-    error::SignalError,
-    identity_key::{IdentityKey, IdentityKeyPair},
-    kdf::{HKDF, HKDFv2, HKDFv3},
-    protos::textsecure::{
-        PreKeyRecordStructure,
-        session_structure::{chain, Chain}, SessionStructure, SignedPreKeyRecordStructure,
+  ecc::{Curve, DjbECKey, ECKey, ECKeyPair},
+  error::SignalError,
+  identity_key::{IdentityKey, IdentityKeyPair},
+  kdf::{HKDFv2, HKDFv3, HKDF},
+  protos::textsecure::{
+    session_structure::{chain, Chain},
+    PreKeyRecordStructure, SessionStructure, SignedPreKeyRecordStructure,
   },
-    ratchet::{ChainKey, RootKey},
-    signal::SignalProtocolAddress,
+  ratchet::{ChainKey, RootKey},
+  signal::SignalProtocolAddress,
 };
 
 // const ARCHIVED_STATES_MAX_LENGTH: u8 = 40;
