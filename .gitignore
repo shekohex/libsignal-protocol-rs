@@ -60,5 +60,6 @@ CMakeFiles
 *Cache.txt
 
 # IDE
-.idea # i love jetbrains, but i don't love these files to be on my repo, sorry :(
+# i love jetbrains, but i don't love these files to be on my repo, sorry :(
+.idea
 
