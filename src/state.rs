@@ -16,7 +16,7 @@ use crate::{
   signal::SignalProtocolAddress,
 };
 
-// const ARCHIVED_STATES_MAX_LENGTH: u8 = 40;
+const ARCHIVED_STATES_MAX_LENGTH: u8 = 40;
 // const MAX_MESSAGE_KEYS: u8 = 2000;
 
 pub struct PreKeyRecord {
@@ -41,12 +41,16 @@ impl PreKeyRecord {
   pub fn id(&self) -> Option<u32> { self.structure.id }
 
   pub fn key_pair(&self) -> Result<ECKeyPair<DjbECKey>, SignalError> {
-    let public_key = self.structure.public_key.clone().ok_or_else(|| {
-      SignalError::InvalidKey("Missing PublicKey".into())
-    })?;
-    let private_key = self.structure.private_key.clone().ok_or_else(|| {
-      SignalError::InvalidKey("Missing PrivateKey".into())
-    })?;
+    let public_key = self
+      .structure
+      .public_key
+      .clone()
+      .ok_or_else(|| SignalError::InvalidKey("Missing PublicKey".into()))?;
+    let private_key = self
+      .structure
+      .private_key
+      .clone()
+      .ok_or_else(|| SignalError::InvalidKey("Missing PrivateKey".into()))?;
     let pub_key = Curve::decode_point(&public_key, 0)?;
     let prv_key = Curve::decode_private_point(&private_key);
     Ok(ECKeyPair::new(pub_key, prv_key))
@@ -192,9 +196,7 @@ impl SessionState {
         ))
       }
     } else {
-      Err(SignalError::InvalidSessionVersion(
-        "Missing Version".into(),
-      ))
+      Err(SignalError::InvalidSessionVersion("Missing Version".into()))
     }
   }
 
@@ -207,9 +209,7 @@ impl SessionState {
       if let Some(key) = &sender_chain.sender_ratchet_key {
         Curve::decode_point(&key, 0)
       } else {
-        Err(SignalError::InvalidKey(
-          "Missing Sender Retchet Key".into(),
-        ))
+        Err(SignalError::InvalidKey("Missing Sender Retchet Key".into()))
       }
     } else {
       Err(SignalError::InvalidKey("Missing Sender Chain".into()))
@@ -362,12 +362,16 @@ impl SignedPreKeyRecord {
   pub fn signature(&self) -> &Option<Vec<u8>> { &self.structure.signature }
 
   pub fn key_pair(&self) -> Result<ECKeyPair<DjbECKey>, SignalError> {
-    let public_key = self.structure.public_key.clone().ok_or_else(|| {
-      SignalError::InvalidKey("Missing PublicKey".into())
-    })?;
-    let private_key = self.structure.private_key.clone().ok_or_else(|| {
-      SignalError::InvalidKey("Missing PrivateKey".into())
-    })?;
+    let public_key = self
+      .structure
+      .public_key
+      .clone()
+      .ok_or_else(|| SignalError::InvalidKey("Missing PublicKey".into()))?;
+    let private_key = self
+      .structure
+      .private_key
+      .clone()
+      .ok_or_else(|| SignalError::InvalidKey("Missing PrivateKey".into()))?;
     let pub_key = Curve::decode_point(&public_key, 0)?;
     let prv_key = Curve::decode_private_point(&private_key);
     Ok(ECKeyPair::new(pub_key, prv_key))
@@ -411,14 +415,83 @@ impl SessionRecord {
     }
   }
 
-  pub fn from_raw(serialized: &[u8]) -> Result<(), SignalError> {
+  pub fn from_raw(serialized: &[u8]) -> Result<Self, SignalError> {
     let record = RecordStructure::decode(serialized)
       .map_err(|e| SignalError::ProtoBufError(e.to_string()))?;
     let current_session = record
       .current_session
-      .ok_or_else(|| SignalError::NoneError("Current Session".into()));
+      .ok_or_else(|| SignalError::NoneError("Current Session".into()))?;
     let previous_sessions = record.previous_sessions;
-    Ok(())
+    let session_state = SessionState::with_structure(current_session);
+    let previous_states = previous_sessions
+      .into_iter()
+      .map(SessionState::with_structure)
+      .collect();
+    Ok(Self {
+      session_state,
+      previous_states,
+      fresh: false,
+    })
+  }
+
+  pub fn remove_previous_session_states(&mut self) {
+    self.previous_states.clear();
+  }
+
+  pub fn set_state(&mut self, state: SessionState) {
+    self.session_state = state;
+  }
+
+  pub fn has_session_state(&self, version: u32, alice_base_key: &[u8]) -> bool {
+    let ver = self.session_state.get_session_version();
+    let base_key = self
+      .session_state
+      .get_alice_base_key()
+      .clone()
+      .unwrap_or_default();
+    if ver == version && base_key == alice_base_key {
+      true
+    } else {
+      for state in &self.previous_states {
+        let base_key = state.get_alice_base_key().clone().unwrap_or_default();
+        if ver == version && base_key == alice_base_key {
+          return true;
+        }
+      }
+      false
+    }
+  }
+
+  /// Move the current `SessionState` into the list of "previous" session
+  /// states, and replace the current `SessionState` with a fresh reset
+  /// instance.
+  pub fn archive_current_state(&mut self) {
+    self.promote_state(SessionState::new());
+  }
+
+  pub fn serialize(&self) -> Result<Vec<u8>, SignalError> {
+    // should we stop clones, and consume self ?
+
+    let mut previous_structures = Vec::new();
+    for previous_state in &self.previous_states {
+      previous_structures.push(previous_state.structure().clone());
+    }
+    let mut record = RecordStructure::default();
+    record.current_session = Some(self.session_state.structure().clone());
+    record.previous_sessions = previous_structures;
+    let mut result = Vec::new();
+    record
+      .encode(&mut result)
+      .map_err(|e| SignalError::ProtoBufError(e.to_string()))?;
+    Ok(result)
+  }
+
+  fn promote_state(&mut self, promoted_state: SessionState) {
+    self.previous_states.insert(0, self.session_state.clone());
+    self.session_state = promoted_state;
+    if self.previous_states.len() > ARCHIVED_STATES_MAX_LENGTH as usize {
+      self.previous_states.pop();
+    }
   }
 }
 
@@ -431,9 +504,9 @@ pub enum Direction {
   RECEIVING,
 }
 
-pub trait IdentityKeyStore {
+pub trait IdentityKeyStore<E: ECKey> {
   /// Get the local client's identity key pair.
-  fn get_identity_key_pair(&self) -> &IdentityKeyPair<DjbECKey>;
+  fn get_identity_key_pair(&self) -> &IdentityKeyPair<E>;
 
   /// Return the local client's registration ID.
   ///
@@ -450,7 +523,7 @@ pub trait IdentityKeyStore {
   fn save_identity(
     &mut self,
     adress: SignalProtocolAddress,
-    identity_key: &IdentityKey<DjbECKey>,
+    identity_key: &IdentityKey<E>,
   ) -> bool;
 
   /// Verify a remote client's identity key.
@@ -475,7 +548,7 @@ pub trait IdentityKeyStore {
   fn is_trusted_identity(
     &self,
     adress: SignalProtocolAddress,
-    identity_key: &IdentityKey<DjbECKey>,
+    identity_key: &IdentityKey<E>,
     direction: Direction,
   ) -> bool;
 
@@ -485,7 +558,7 @@ pub trait IdentityKeyStore {
   fn get_identity(
     &self,
     adress: SignalProtocolAddress,
-  ) -> Option<&IdentityKey<DjbECKey>>;
+  ) -> Option<&IdentityKey<E>>;
 }
 
 pub trait PreKeyStore {
@@ -517,7 +590,57 @@ pub trait SignedPreKeyStore {
   fn remove_signed_pre_key(&mut self, signed_pre_key_id: u32);
 }
 
-pub trait SignalProtocolStore:
-  IdentityKeyStore + SignedPreKeyStore + PreKeyStore
+/// The trait to the durable store of session state information
+/// for remote clients.
+pub trait SessionStore {
+  /// Returns a copy of the `SessionRecord` corresponding to the
+  /// `recipientId` + `deviceId` tuple, or a new `SessionRecord` if one does not
+  /// currently exist.
+  ///
+  /// It is important that implementations return a copy of the current durable
+  /// information.
+  ///
+  /// The returned `SessionRecord` may be modified, but those
+  /// changes should not have an effect on the durable session state (what is
+  /// returned by subsequent calls to this method) without the store method
+  /// being called here first.
+  ///
+  /// * `address` The name and device ID of the remote client.
+  fn load_session(&mut self, adress: SignalProtocolAddress) -> SessionRecord;
+
+  /// Returns all known devices with active sessions for a recipient
+  ///
+  /// * `name` the name of the client.
+  fn get_sub_device_sessions(&self, name: &str) -> Vec<u32>;
+
+  /// Commit to storage the `SessionRecord` for a given `recipientId` +
+  /// `deviceId` tuple.
+  /// * `address` the address of the remote client.
+  /// * `record` the current `SessionRecord` for the remote client.
+  fn store_session(
+    &mut self,
+    adress: SignalProtocolAddress,
+    record: SessionRecord,
+  );
+
+  /// Determine whether there is a committed `SessionRecord` for a
+  /// `recipientId` + `deviceId` tuple.
+  /// * `address` the address of the remote client.
+  fn contains_session(&self, adress: SignalProtocolAddress) -> bool;
+
+  /// Remove a `SessionRecord` for a `recipientId` + `deviceId` tuple.
+  ///
+  /// * `address` the address of the remote client.
+  fn delete_session(&mut self, adress: SignalProtocolAddress);
+
+  /// Remove the `SessionRecord`s corresponding to all devices of a
+  /// recipientId.
+  ///
+  /// * `name` the name of the remote client.
+  fn delete_all_sessions(&mut self, name: &str);
+}
+
+pub trait SignalProtocolStore<E: ECKey>:
+  IdentityKeyStore<E> + SignedPreKeyStore + PreKeyStore + SessionStore
 {
 }
