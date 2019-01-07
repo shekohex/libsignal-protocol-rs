@@ -21,4 +21,10 @@ pub enum SignalError {
     _0
   )]
   BufferTooSmall(usize),
+
+  #[fail(
+    display = "Missing: {}",
+    _0
+  )]
+  NoneError(String),
 }

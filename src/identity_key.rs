@@ -76,10 +76,10 @@ impl<E: ECKey> IdentityKeyPair<E> {
     let structure = textsecure::IdentityKeyPairStructure::decode(serialized)
       .map_err(|e| SignalError::InvalidKey(e.to_string()))?;
     let public_key = structure.public_key.ok_or_else(|| {
-      SignalError::InvalidKey("Missing PublicKey".to_string())
+      SignalError::InvalidKey("Missing PublicKey".into())
     })?;
     let private_key = structure.private_key.ok_or_else(|| {
-      SignalError::InvalidKey("Missing PrivateKey".to_string())
+      SignalError::InvalidKey("Missing PrivateKey".into())
     })?;
     let pub_key = Curve::decode_point(&public_key, 0)?;
     let prv_key = Curve::decode_private_point(&private_key);

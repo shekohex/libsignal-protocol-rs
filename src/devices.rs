@@ -166,7 +166,7 @@ impl DeviceConsistencyMessage {
         .map_err(|e| SignalError::ProtoBufError(e.to_string()))?;
     let signature_bytes =
       device_consistency_code_message.signature.ok_or_else(|| {
-        SignalError::ProtoBufError("Missing signature".to_string())
+        SignalError::ProtoBufError("Missing signature".into())
       })?;
     let mut array = [0; 96];
     let bytes = &signature_bytes[..96]; // panics if not enough data
@@ -178,7 +178,7 @@ impl DeviceConsistencyMessage {
     )?;
     let generation =
       device_consistency_code_message.generation.ok_or_else(|| {
-        SignalError::ProtoBufError("Missing generation".to_string())
+        SignalError::ProtoBufError("Missing generation".into())
       })?;
     let signature = DeviceConsistencySignature::new(array, vrf_output_bytes);
     let mut serialized_bytes = vec![0; serialized.len()];

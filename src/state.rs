@@ -1,5 +1,5 @@
 use either::Either;
-use getset::Getters;
+use getset::{Getters, Setters};
 use prost::Message;
 
 use crate::{
@@ -9,7 +9,8 @@ use crate::{
   kdf::{HKDFv2, HKDFv3, HKDF},
   protos::textsecure::{
     session_structure::{chain, Chain},
-    PreKeyRecordStructure, SessionStructure, SignedPreKeyRecordStructure,
+    PreKeyRecordStructure, RecordStructure, SessionStructure,
+    SignedPreKeyRecordStructure,
   },
   ratchet::{ChainKey, RootKey},
   signal::SignalProtocolAddress,
@@ -41,10 +42,10 @@ impl PreKeyRecord {
 
   pub fn key_pair(&self) -> Result<ECKeyPair<DjbECKey>, SignalError> {
     let public_key = self.structure.public_key.clone().ok_or_else(|| {
-      SignalError::InvalidKey("Missing PublicKey".to_string())
+      SignalError::InvalidKey("Missing PublicKey".into())
     })?;
     let private_key = self.structure.private_key.clone().ok_or_else(|| {
-      SignalError::InvalidKey("Missing PrivateKey".to_string())
+      SignalError::InvalidKey("Missing PrivateKey".into())
     })?;
     let pub_key = Curve::decode_point(&public_key, 0)?;
     let prv_key = Curve::decode_private_point(&private_key);
@@ -59,6 +60,40 @@ impl PreKeyRecord {
       .map_err(|e| SignalError::ProtoBufError(e.to_string()))?;
     Ok(result)
   }
+}
+#[derive(Clone, Debug, Getters, Setters)]
+pub struct PreKeyBundle<E: ECKey> {
+  /// the registration ID associated with this PreKey.
+  #[get = "pub"]
+  #[set = "pub"]
+  registration_id: u32,
+  /// the device ID this PreKey belongs to
+  #[get = "pub"]
+  #[set = "pub"]
+  device_id: u32,
+  /// the unique key ID for this PreKey.
+  #[get = "pub"]
+  #[set = "pub"]
+  pre_key_id: u32,
+  /// the public key for this PreKey.
+  #[get = "pub"]
+  #[set = "pub"]
+  pre_key_public: E,
+  /// the unique key ID for this signed prekey.
+  #[get = "pub"]
+  #[set = "pub"]
+  signed_pre_key_id: u32,
+  /// the signed prekey for this PreKeyBundle.
+  #[get = "pub"]
+  #[set = "pub"]
+  signed_pre_key_public: E,
+  /// the signature over the signed  prekey.
+  #[get = "pub"]
+  #[set = "pub"]
+  signed_pre_key_signature: Vec<u8>,
+  #[get = "pub"]
+  #[set = "pub"]
+  identity_key: IdentityKey<E>,
 }
 
 pub struct SignedPreKeyRecord {
@@ -130,7 +165,7 @@ impl SessionState {
     if let Some(key) = &self.structure.local_identity_public {
       IdentityKey::from_raw(&key, 0)
     } else {
-      Err(SignalError::InvalidKey("Missing LocalKey".to_string()))
+      Err(SignalError::InvalidKey("Missing LocalKey".into()))
     }
   }
 
@@ -153,12 +188,12 @@ impl SessionState {
         Ok(Either::Right(RootKey::new(HKDFv3, key)))
       } else {
         Err(SignalError::InvalidSessionVersion(
-          "Unknown Version (not 2 or 3)".to_string(),
+          "Unknown Version (not 2 or 3)".into(),
         ))
       }
     } else {
       Err(SignalError::InvalidSessionVersion(
-        "Missing Version".to_string(),
+        "Missing Version".into(),
       ))
     }
   }
@@ -173,11 +208,11 @@ impl SessionState {
         Curve::decode_point(&key, 0)
       } else {
         Err(SignalError::InvalidKey(
-          "Missing Sender Retchet Key".to_string(),
+          "Missing Sender Retchet Key".into(),
         ))
       }
     } else {
-      Err(SignalError::InvalidKey("Missing Sender Chain".to_string()))
+      Err(SignalError::InvalidKey("Missing Sender Chain".into()))
     }
   }
 
@@ -191,11 +226,11 @@ impl SessionState {
         Ok(ECKeyPair::new(public_key, private_key))
       } else {
         Err(SignalError::InvalidKey(
-          "Missing Sender Retchet Private Key".to_string(),
+          "Missing Sender Retchet Private Key".into(),
         ))
       }
     } else {
-      Err(SignalError::InvalidKey("Missing Sender Chain".to_string()))
+      Err(SignalError::InvalidKey("Missing Sender Chain".into()))
     }
   }
 
@@ -298,7 +333,6 @@ impl SessionState {
   }
 }
 
-/// A `SessionRecord` encapsulates the state of an ongoing session.
 impl SignedPreKeyRecord {
   pub fn new(
     id: u32,
@@ -329,10 +363,10 @@ impl SignedPreKeyRecord {
 
   pub fn key_pair(&self) -> Result<ECKeyPair<DjbECKey>, SignalError> {
     let public_key = self.structure.public_key.clone().ok_or_else(|| {
-      SignalError::InvalidKey("Missing PublicKey".to_string())
+      SignalError::InvalidKey("Missing PublicKey".into())
     })?;
     let private_key = self.structure.private_key.clone().ok_or_else(|| {
-      SignalError::InvalidKey("Missing PrivateKey".to_string())
+      SignalError::InvalidKey("Missing PrivateKey".into())
     })?;
     let pub_key = Curve::decode_point(&public_key, 0)?;
     let prv_key = Curve::decode_private_point(&private_key);
@@ -349,7 +383,48 @@ impl SignedPreKeyRecord {
   }
 }
 
-pub struct SessionRecord {}
+/// A `SessionRecord` encapsulates the state of an ongoing session.
+#[derive(Clone, Debug, Getters)]
+pub struct SessionRecord {
+  #[get = "pub"]
+  session_state: SessionState,
+  #[get = "pub"]
+  previous_states: Vec<SessionState>,
+  #[get = "pub"]
+  fresh: bool,
+}
+
+impl SessionRecord {
+  pub fn fresh_session() -> Self {
+    Self {
+      session_state: SessionState::new(),
+      previous_states: Vec::new(),
+      fresh: true,
+    }
+  }
+
+  pub fn with_state(state: &SessionState) -> Self {
+    Self {
+      session_state: state.clone(),
+      previous_states: Vec::new(),
+      fresh: false,
+    }
+  }
+
+  pub fn from_raw(serialized: &[u8]) -> Result<(), SignalError> {
+    let record = RecordStructure::decode(serialized)
+      .map_err(|e| SignalError::ProtoBufError(e.to_string()))?;
+    let current_session = record
+      .current_session
+      .ok_or_else(|| SignalError::NoneError("Current Session".into()));
+    let previous_sessions = record.previous_sessions;
+    Ok(())
+  }
+}
+
+impl Default for SessionRecord {
+  fn default() -> Self { Self::fresh_session() }
+}
 
 pub enum Direction {
   SENDING,
