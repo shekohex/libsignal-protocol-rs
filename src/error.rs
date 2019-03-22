@@ -1,4 +1,5 @@
 use failure::Fail;
+
 #[derive(Clone, Debug, Fail, PartialEq, Eq)]
 pub enum SignalError {
   #[fail(display = "invalid key: {}", _0)]
@@ -22,9 +23,6 @@ pub enum SignalError {
   )]
   BufferTooSmall(usize),
 
-  #[fail(
-    display = "Missing: {}",
-    _0
-  )]
+  #[fail(display = "Missing: {}", _0)]
   NoneError(String),
 }

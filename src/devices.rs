@@ -1,14 +1,16 @@
-use crate::{
-  ecc::{Curve, DjbECKey, ECKey},
-  error::SignalError,
-  identity_key::{IdentityKey, IdentityKeyPair},
-  protos::textsecure,
-  utils,
-};
+use std::cmp::Ordering;
+
 use getset::Getters;
 use prost::Message;
 use sha2::digest::Digest;
-use std::cmp::Ordering;
+
+use crate::{
+    ecc::{Curve, DjbECKey, ECKey},
+    error::SignalError,
+    identity_key::{IdentityKey, IdentityKeyPair},
+    protos::textsecure,
+    utils,
+};
 
 const VERSION: &[u8] = b"DeviceConsistencyCommitment_V0";
 const CODE_VERSION: u16 = 0;
@@ -164,10 +166,9 @@ impl DeviceConsistencyMessage {
     let device_consistency_code_message =
       textsecure::DeviceConsistencyCodeMessage::decode(serialized)
         .map_err(|e| SignalError::ProtoBufError(e.to_string()))?;
-    let signature_bytes =
-      device_consistency_code_message.signature.ok_or_else(|| {
-        SignalError::ProtoBufError("Missing signature".into())
-      })?;
+    let signature_bytes = device_consistency_code_message
+      .signature
+      .ok_or_else(|| SignalError::ProtoBufError("Missing signature".into()))?;
     let mut array = [0; 96];
     let bytes = &signature_bytes[..96]; // panics if not enough data
     array.copy_from_slice(bytes);
@@ -176,10 +177,9 @@ impl DeviceConsistencyMessage {
       commitment.as_bytes(),
       &array,
     )?;
-    let generation =
-      device_consistency_code_message.generation.ok_or_else(|| {
-        SignalError::ProtoBufError("Missing generation".into())
-      })?;
+    let generation = device_consistency_code_message
+      .generation
+      .ok_or_else(|| SignalError::ProtoBufError("Missing generation".into()))?;
     let signature = DeviceConsistencySignature::new(array, vrf_output_bytes);
     let mut serialized_bytes = vec![0; serialized.len()];
     serialized_bytes.copy_from_slice(&serialized);
@@ -193,10 +193,11 @@ impl DeviceConsistencyMessage {
 
 #[cfg(test)]
 mod test_devices {
-  use super::*;
-  use crate::key_helper::KeyHelper;
+    use crate::key_helper::KeyHelper;
 
-  fn generate_code(
+    use super::*;
+
+    fn generate_code(
     commitment: &DeviceConsistencyCommitment,
     messages: &[&DeviceConsistencyMessage],
   ) -> String {

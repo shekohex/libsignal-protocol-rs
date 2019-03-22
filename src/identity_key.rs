@@ -1,13 +1,15 @@
-use crate::{
-  ecc::{Curve, ECKey},
-  error::SignalError,
-  protos::textsecure,
-  utils::ToHex,
-};
 use core::cmp::Ordering;
+use std::hash::{Hash, Hasher};
+
 use getset::Getters;
 use prost::Message;
-use std::hash::{Hash, Hasher};
+
+use crate::{
+    ecc::{Curve, ECKey},
+    error::SignalError,
+    protos::textsecure,
+    utils::ToHex,
+};
 
 #[derive(Clone, Debug, Getters)]
 pub struct IdentityKey<E: ECKey> {
@@ -75,12 +77,12 @@ impl<E: ECKey> IdentityKeyPair<E> {
   ) -> Result<IdentityKeyPair<E>, SignalError> {
     let structure = textsecure::IdentityKeyPairStructure::decode(serialized)
       .map_err(|e| SignalError::InvalidKey(e.to_string()))?;
-    let public_key = structure.public_key.ok_or_else(|| {
-      SignalError::InvalidKey("Missing PublicKey".into())
-    })?;
-    let private_key = structure.private_key.ok_or_else(|| {
-      SignalError::InvalidKey("Missing PrivateKey".into())
-    })?;
+    let public_key = structure
+      .public_key
+      .ok_or_else(|| SignalError::InvalidKey("Missing PublicKey".into()))?;
+    let private_key = structure
+      .private_key
+      .ok_or_else(|| SignalError::InvalidKey("Missing PrivateKey".into()))?;
     let pub_key = Curve::decode_point(&public_key, 0)?;
     let prv_key = Curve::decode_private_point(&private_key);
     Ok(IdentityKeyPair {

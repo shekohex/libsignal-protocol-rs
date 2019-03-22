@@ -6,13 +6,13 @@ use crate::{
   ecc::{Curve, DjbECKey, ECKey, ECKeyPair},
   error::SignalError,
   identity_key::{IdentityKey, IdentityKeyPair},
-  kdf::{HKDFv2, HKDFv3, HKDF},
+  kdf::{HKDF, HKDFv2, HKDFv3},
   protos::textsecure::{
-    session_structure::{chain, Chain},
-    PreKeyRecordStructure, RecordStructure, SessionStructure,
+    PreKeyRecordStructure,
+    RecordStructure, session_structure::{chain, Chain}, SessionStructure,
     SignedPreKeyRecordStructure,
   },
-  ratchet::{ChainKey, RootKey},
+  ratchet::{ChainKey, MessageKeys, RootKey},
   signal::SignalProtocolAddress,
 };
 
@@ -100,17 +100,37 @@ pub struct PreKeyBundle<E: ECKey> {
   identity_key: IdentityKey<E>,
 }
 
+#[derive(Getters, Debug)]
+pub struct UnacknowledgedPreKeyMessageItems<E: ECKey> {
+  #[get = "pub"]
+  pre_key_id: Option<u32>,
+  #[get = "pub"]
+  signed_pre_key_id: u32,
+  #[get = "pub"]
+  base_key: E,
+}
+
 pub struct SignedPreKeyRecord {
   structure: SignedPreKeyRecordStructure,
 }
 
 #[derive(Clone, Debug, Default, Getters)]
-pub struct SessionState {
+pub struct SessionState<K: ECKey> {
   #[get = "pub"]
   structure: SessionStructure,
 }
 
-impl SessionState {
+impl UnacknowledgedPreKeyMessageItems<DjbECKey> {
+  pub fn new(pre_key_id: Option<u32>,signed_pre_key_id: u32,base_key: DjbECKey,) -> Self {
+    Self {
+      base_key,
+      pre_key_id,
+      signed_pre_key_id,
+    }
+  }
+}
+
+impl SessionState<DjbECKey> {
   pub fn new() -> Self { Self::default() }
 
   pub fn with_structure(structure: SessionStructure) -> Self {
@@ -147,15 +167,15 @@ impl SessionState {
     self.structure.session_version = Some(ver);
   }
 
-  pub fn set_local_identity_key<K: ECKey>(&mut self, key: &IdentityKey<K>) {
+  pub fn set_local_identity_key(&mut self, key: &IdentityKey<K>) {
     self.structure.local_identity_public = Some(key.serialize());
   }
 
-  pub fn set_remote_identity_key<K: ECKey>(&mut self, key: &IdentityKey<K>) {
+  pub fn set_remote_identity_key(&mut self, key: &IdentityKey<K>) {
     self.structure.remote_identity_public = Some(key.serialize());
   }
 
-  pub fn get_remote_identity_key<K: ECKey>(&self) -> Option<IdentityKey<K>> {
+  pub fn get_remote_identity_key(&self) -> Option<IdentityKey<K>> {
     if let Some(key) = &self.structure.remote_identity_public {
       IdentityKey::from_raw(&key, 0).ok()
     } else {
@@ -163,9 +183,7 @@ impl SessionState {
     }
   }
 
-  pub fn get_local_identity_key<K: ECKey>(
-    &self,
-  ) -> Result<IdentityKey<K>, SignalError> {
+  pub fn get_local_identity_key(&self) -> Result<IdentityKey<K>, SignalError> {
     if let Some(key) = &self.structure.local_identity_public {
       IdentityKey::from_raw(&key, 0)
     } else {
@@ -204,7 +222,7 @@ impl SessionState {
     self.structure.remote_identity_public = Some(key.key().to_vec());
   }
 
-  pub fn get_sender_ratchet_key<K: ECKey>(&self) -> Result<K, SignalError> {
+  pub fn get_sender_ratchet_key(&self) -> Result<K, SignalError> {
     if let Some(sender_chain) = &self.structure.sender_chain {
       if let Some(key) = &sender_chain.sender_ratchet_key {
         Curve::decode_point(&key, 0)
@@ -216,10 +234,10 @@ impl SessionState {
     }
   }
 
-  pub fn get_sender_ratchet_key_pair<K: ECKey>(
+  pub fn get_sender_ratchet_key_pair(
     &self,
   ) -> Result<ECKeyPair<K>, SignalError> {
-    let public_key = self.get_sender_ratchet_key::<K>()?;
+    let public_key = self.get_sender_ratchet_key()?;
     if let Some(sender_chain) = &self.structure.sender_chain {
       if let Some(key) = &sender_chain.sender_ratchet_key_private {
         let private_key = Curve::decode_private_point(&key);
@@ -234,7 +252,7 @@ impl SessionState {
     }
   }
 
-  pub fn get_receiver_chain<K: ECKey>(
+  pub fn get_receiver_chain(
     &self,
     sender_ephemeral: &K,
   ) -> Option<(Chain, usize)> {
@@ -251,7 +269,7 @@ impl SessionState {
     None
   }
 
-  pub fn has_receiver_chain<K: ECKey>(&self, sender_ephemeral: &K) -> bool {
+  pub fn has_receiver_chain(&self, sender_ephemeral: &K) -> bool {
     self.get_receiver_chain(sender_ephemeral).is_some()
   }
 
@@ -259,7 +277,7 @@ impl SessionState {
     self.structure.sender_chain.is_some()
   }
 
-  pub fn get_receiver_chain_key<K: ECKey>(
+  pub fn get_receiver_chain_key(
     &self,
     sender_ephemeral: &K,
   ) -> Option<Either<ChainKey<HKDFv2>, ChainKey<HKDFv3>>> {
@@ -286,7 +304,7 @@ impl SessionState {
     }
   }
 
-  pub fn add_receiver_chain_key<K: ECKey, H: HKDF>(
+  pub fn add_receiver_chain_key<H: HKDF>(
     &mut self,
     sender_ratchet_key: &K,
     chain_key: &ChainKey<H>,
@@ -304,7 +322,7 @@ impl SessionState {
     }
   }
 
-  pub fn set_sender_chain<K: ECKey, H: HKDF>(
+  pub fn set_sender_chain<H: HKDF>(
     &mut self,
     sender_ratchet_key_pair: &ECKeyPair<K>,
     chain_key: &ChainKey<H>,
@@ -321,8 +339,95 @@ impl SessionState {
     self.structure.sender_chain = Some(sender_chain_structure);
   }
 
-  // TODO: add more methods from `libsignal/state/SessionState.java`
+  pub fn get_sender_chain_key(
+  ) -> Option<Either<ChainKey<HKDFv2>, ChainKey<HKDFv3>>> {
+    unimplemented!()
+  }
 
+  pub fn set_sender_chain_key<H: HKDF>(key: ChainKey<H>) { unimplemented!() }
+
+  pub fn has_message_keys(sender_ephemeral: K, counter: u32) -> bool {
+    unimplemented!()
+  }
+
+  pub fn remove_message_keys(sender_ephemeral: K, counter: u32) -> MessageKeys {
+    unimplemented!()
+  }
+
+  pub fn set_message_keys(sender_ephemeral: K, message_keys: MessageKeys) {
+    unimplemented!()
+  }
+
+  pub fn set_receiver_chain_key<H: HKDF>(
+    sender_ephemeral: K,
+    chain_key: ChainKey<H>,
+  ) {
+    unimplemented!()
+  }
+
+  pub fn set_pending_key_exchange(
+    sequence: i32,
+    our_base_key: ECKeyPair<K>,
+    our_ratchet_key: ECKeyPair<K>,
+    our_identity_key: IdentityKeyPair<K>,
+  ) {
+    unimplemented!()
+  }
+
+  pub fn get_pending_key_exchange_sequence(&self) -> Result<u32, SignalError> {
+    self
+      .structure
+      .pending_key_exchange
+      .ok_or_else(|| {
+        Err(SignalError::ProtoBufError(
+          "Missing Pending Key Exchange".into(),
+        ))
+      })?
+      .sequence
+      .ok_or_else(|| Err(SignalError::ProtoBufError("Missing Sequence".into())))
+  }
+
+  pub fn get_pending_key_exchange_base_key(
+    &self,
+  ) -> Result<ECKeyPair<K>, SignalError> {
+    unimplemented!()
+  }
+
+  pub fn get_pending_key_exchange_ratchet_key(
+    &self,
+  ) -> Result<ECKeyPair<K>, SignalError> {
+    unimplemented!()
+  }
+
+  pub fn has_pending_key_exchange(&self) -> bool {
+    self.structure.pending_key_exchange.is_some()
+  }
+
+  pub fn has_unacknowledged_pre_key_message(&self) -> bool {
+    self.structure.pending_pre_key.is_some()
+  }
+
+  pub fn get_unacknowledged_pre_key_message_items(
+    &self,
+  ) -> Result<UnacknowledgedPreKeyMessageItems<K>, SignalError> {
+    unimplemented!()
+  }
+
+  pub fn clear_unacknowledged_pre_key_message(&mut self) {
+    self.structure.pending_pre_key = None;
+  }
+
+  pub fn set_remote_registration_id(&mut self, registration_id: u32) {
+    self.structure.remote_registration_id = Some(registration_id);
+  }
+
+  pub fn get_remote_registration_id(&self) -> Option<u32> {
+    self.structure.remote_registration_id
+  }
+
+  pub fn get_local_registration_id(&self) -> Option<u32> {
+    self.structure.local_registration_id
+  }
   pub fn serialize(&self) -> Result<Vec<u8>, SignalError> {
     let mut result = Vec::new();
     self
@@ -391,9 +496,9 @@ impl SignedPreKeyRecord {
 #[derive(Clone, Debug, Getters)]
 pub struct SessionRecord {
   #[get = "pub"]
-  session_state: SessionState,
+  session_state: SessionState<DjbECKey>,
   #[get = "pub"]
-  previous_states: Vec<SessionState>,
+  previous_states: Vec<SessionState<DjbECKey>>,
   #[get = "pub"]
   fresh: bool,
 }
@@ -407,7 +512,7 @@ impl SessionRecord {
     }
   }
 
-  pub fn with_state(state: &SessionState) -> Self {
+  pub fn with_state(state: &SessionState<DjbECKey>) -> Self {
     Self {
       session_state: state.clone(),
       previous_states: Vec::new(),
@@ -438,7 +543,7 @@ impl SessionRecord {
     self.previous_states.clear();
   }
 
-  pub fn set_state(&mut self, state: SessionState) {
+  pub fn set_state(&mut self, state: SessionState<DjbECKey>) {
     self.session_state = state;
   }
 
@@ -486,7 +591,7 @@ impl SessionRecord {
     Ok(result)
   }
 
-  fn promote_state(&mut self, promoted_state: SessionState) {
+  fn promote_state(&mut self, promoted_state: SessionState<DjbECKey>) {
     self.previous_states.insert(0, self.session_state.clone());
     self.session_state = promoted_state;
     if self.previous_states.len() > ARCHIVED_STATES_MAX_LENGTH as usize {
@@ -522,7 +627,7 @@ pub trait IdentityKeyStore<E: ECKey> {
   /// `false` if not
   fn save_identity(
     &mut self,
-    adress: SignalProtocolAddress,
+    address: SignalProtocolAddress,
     identity_key: &IdentityKey<E>,
   ) -> bool;
 
@@ -547,7 +652,7 @@ pub trait IdentityKeyStore<E: ECKey> {
   /// being used for.
   fn is_trusted_identity(
     &self,
-    adress: SignalProtocolAddress,
+    address: SignalProtocolAddress,
     identity_key: &IdentityKey<E>,
     direction: Direction,
   ) -> bool;
@@ -557,7 +662,7 @@ pub trait IdentityKeyStore<E: ECKey> {
   /// return The public identity key, or `None` if absent
   fn get_identity(
     &self,
-    adress: SignalProtocolAddress,
+    address: SignalProtocolAddress,
   ) -> Option<&IdentityKey<E>>;
 }
 
@@ -606,7 +711,7 @@ pub trait SessionStore {
   /// being called here first.
   ///
   /// * `address` The name and device ID of the remote client.
-  fn load_session(&mut self, adress: SignalProtocolAddress) -> SessionRecord;
+  fn load_session(&mut self, address: SignalProtocolAddress) -> SessionRecord;
 
   /// Returns all known devices with active sessions for a recipient
   ///
@@ -619,19 +724,19 @@ pub trait SessionStore {
   /// * `record` the current `SessionRecord` for the remote client.
   fn store_session(
     &mut self,
-    adress: SignalProtocolAddress,
+    address: SignalProtocolAddress,
     record: SessionRecord,
   );
 
   /// Determine whether there is a committed `SessionRecord` for a
   /// `recipientId` + `deviceId` tuple.
   /// * `address` the address of the remote client.
-  fn contains_session(&self, adress: SignalProtocolAddress) -> bool;
+  fn contains_session(&self, address: SignalProtocolAddress) -> bool;
 
   /// Remove a `SessionRecord` for a `recipientId` + `deviceId` tuple.
   ///
   /// * `address` the address of the remote client.
-  fn delete_session(&mut self, adress: SignalProtocolAddress);
+  fn delete_session(&mut self, address: SignalProtocolAddress);
 
   /// Remove the `SessionRecord`s corresponding to all devices of a
   /// recipientId.
