@@ -3,17 +3,17 @@ use getset::{Getters, Setters};
 use prost::Message;
 
 use crate::{
-  ecc::{Curve, DjbECKey, ECKey, ECKeyPair},
-  error::SignalError,
-  identity_key::{IdentityKey, IdentityKeyPair},
-  kdf::{HKDF, HKDFv2, HKDFv3},
-  protos::textsecure::{
-    PreKeyRecordStructure,
-    RecordStructure, session_structure::{chain, Chain}, SessionStructure,
-    SignedPreKeyRecordStructure,
+    ecc::{Curve, DjbECKey, ECKey, ECKeyPair},
+    error::SignalError,
+    identity_key::{IdentityKey, IdentityKeyPair},
+    kdf::{HKDF, HKDFv2, HKDFv3},
+    protos::textsecure::{
+        PreKeyRecordStructure,
+        RecordStructure, session_structure::{chain, Chain}, SessionStructure,
+        SignedPreKeyRecordStructure,
   },
-  ratchet::{ChainKey, MessageKeys, RootKey},
-  signal::SignalProtocolAddress,
+    ratchet::{ChainKey, MessageKeys, RootKey},
+    signal::SignalProtocolAddress,
 };
 
 const ARCHIVED_STATES_MAX_LENGTH: u8 = 40;
@@ -227,7 +227,7 @@ impl SessionState<DjbECKey> {
       if let Some(key) = &sender_chain.sender_ratchet_key {
         Curve::decode_point(&key, 0)
       } else {
-        Err(SignalError::InvalidKey("Missing Sender Retchet Key".into()))
+        Err(SignalError::InvalidKey("Missing Sender ratchet Key".into()))
       }
     } else {
       Err(SignalError::InvalidKey("Missing Sender Chain".into()))
@@ -244,7 +244,7 @@ impl SessionState<DjbECKey> {
         Ok(ECKeyPair::new(public_key, private_key))
       } else {
         Err(SignalError::InvalidKey(
-          "Missing Sender Retchet Private Key".into(),
+          "Missing Sender ratchet Private Key".into(),
         ))
       }
     } else {
