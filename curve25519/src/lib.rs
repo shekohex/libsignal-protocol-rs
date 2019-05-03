@@ -10,7 +10,7 @@ include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum CurveError {
   VrfSignatureVerificationFailed,
-  CalculateSignatureFaild,
+  CalculateSignatureFailed,
 }
 
 impl Display for CurveError {
@@ -21,7 +21,7 @@ impl Display for CurveError {
     use crate::CurveError::*;
     match self {
       VrfSignatureVerificationFailed => write!(f, "Invalid signature"),
-      CalculateSignatureFaild => {
+      CalculateSignatureFailed => {
         write!(f, "Error While Calculating the Signature")
       },
     }
@@ -40,7 +40,7 @@ pub struct Curve25519<R: RngCore> {
 impl Default for Curve25519<OsRng> {
   /// Create the `Curve25519` with `OsRng` as a provider
   ///
-  /// ### Paincs
+  /// ### Panics
   /// if it is unable to create the `OsRng`
   fn default() -> Self {
     let os_rng = OsRng::new().unwrap();
@@ -122,7 +122,7 @@ impl<R: RngCore> Curve25519<R> {
     if result == 0 {
       Ok(signature)
     } else {
-      Err(CurveError::CalculateSignatureFaild)
+      Err(CurveError::CalculateSignatureFailed)
     }
   }
 
@@ -167,7 +167,7 @@ impl<R: RngCore> Curve25519<R> {
     if result == 0 {
       Ok(signature)
     } else {
-      Err(CurveError::CalculateSignatureFaild)
+      Err(CurveError::CalculateSignatureFailed)
     }
   }
 

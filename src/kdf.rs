@@ -151,9 +151,9 @@ impl HKDF for HKDFv3 {
 
 #[cfg(test)]
 mod test_kdf {
-    use super::*;
+  use super::*;
 
-    #[test]
+  #[test]
   fn test_vector_v3() {
     let ikm = [
       0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b,

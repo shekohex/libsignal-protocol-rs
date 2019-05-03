@@ -5,11 +5,11 @@ use prost::Message;
 use sha2::digest::Digest;
 
 use crate::{
-    ecc::{Curve, DjbECKey, ECKey},
-    error::SignalError,
-    identity_key::{IdentityKey, IdentityKeyPair},
-    protos::textsecure,
-    utils,
+  ecc::{Curve, DjbECKey, ECKey},
+  error::SignalError,
+  identity_key::{IdentityKey, IdentityKeyPair},
+  protos::textsecure,
+  utils,
 };
 
 const VERSION: &[u8] = b"DeviceConsistencyCommitment_V0";
@@ -193,11 +193,11 @@ impl DeviceConsistencyMessage {
 
 #[cfg(test)]
 mod test_devices {
-    use crate::key_helper::KeyHelper;
+  use crate::key_helper::KeyHelper;
 
-    use super::*;
+  use super::*;
 
-    fn generate_code(
+  fn generate_code(
     commitment: &DeviceConsistencyCommitment,
     messages: &[&DeviceConsistencyMessage],
   ) -> String {

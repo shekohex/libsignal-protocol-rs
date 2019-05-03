@@ -5,10 +5,10 @@ use getset::Getters;
 use prost::Message;
 
 use crate::{
-    ecc::{Curve, ECKey},
-    error::SignalError,
-    protos::textsecure,
-    utils::ToHex,
+  ecc::{Curve, ECKey},
+  error::SignalError,
+  protos::textsecure,
+  utils::ToHex,
 };
 
 #[derive(Clone, Debug, Getters)]

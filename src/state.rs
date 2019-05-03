@@ -3,17 +3,17 @@ use getset::{Getters, Setters};
 use prost::Message;
 
 use crate::{
-    ecc::{Curve, DjbECKey, ECKey, ECKeyPair},
-    error::SignalError,
-    identity_key::{IdentityKey, IdentityKeyPair},
-    kdf::{HKDF, HKDFv2, HKDFv3},
-    protos::textsecure::{
-        PreKeyRecordStructure,
-        RecordStructure, session_structure::{chain, Chain}, SessionStructure,
-        SignedPreKeyRecordStructure,
+  ecc::{Curve, DjbECKey, ECKey, ECKeyPair},
+  error::SignalError,
+  identity_key::{IdentityKey, IdentityKeyPair},
+  kdf::{HKDFv2, HKDFv3, HKDF},
+  protos::textsecure::{
+    session_structure::{chain, Chain},
+    PreKeyRecordStructure, RecordStructure, SessionStructure,
+    SignedPreKeyRecordStructure,
   },
-    ratchet::{ChainKey, MessageKeys, RootKey},
-    signal::SignalProtocolAddress,
+  ratchet::{ChainKey, MessageKeys, RootKey},
+  signal::SignalProtocolAddress,
 };
 
 const ARCHIVED_STATES_MAX_LENGTH: u8 = 40;
@@ -115,13 +115,17 @@ pub struct SignedPreKeyRecord {
 }
 
 #[derive(Clone, Debug, Default, Getters)]
-pub struct SessionState<K: ECKey> {
+pub struct SessionState {
   #[get = "pub"]
   structure: SessionStructure,
 }
 
 impl UnacknowledgedPreKeyMessageItems<DjbECKey> {
-  pub fn new(pre_key_id: Option<u32>,signed_pre_key_id: u32,base_key: DjbECKey,) -> Self {
+  pub fn new(
+    pre_key_id: Option<u32>,
+    signed_pre_key_id: u32,
+    base_key: DjbECKey,
+  ) -> Self {
     Self {
       base_key,
       pre_key_id,
@@ -130,7 +134,7 @@ impl UnacknowledgedPreKeyMessageItems<DjbECKey> {
   }
 }
 
-impl SessionState<DjbECKey> {
+impl SessionState {
   pub fn new() -> Self { Self::default() }
 
   pub fn with_structure(structure: SessionStructure) -> Self {
@@ -167,15 +171,15 @@ impl SessionState<DjbECKey> {
     self.structure.session_version = Some(ver);
   }
 
-  pub fn set_local_identity_key(&mut self, key: &IdentityKey<K>) {
+  pub fn set_local_identity_key(&mut self, key: &IdentityKey<DjbECKey>) {
     self.structure.local_identity_public = Some(key.serialize());
   }
 
-  pub fn set_remote_identity_key(&mut self, key: &IdentityKey<K>) {
+  pub fn set_remote_identity_key(&mut self, key: &IdentityKey<DjbECKey>) {
     self.structure.remote_identity_public = Some(key.serialize());
   }
 
-  pub fn get_remote_identity_key(&self) -> Option<IdentityKey<K>> {
+  pub fn get_remote_identity_key(&self) -> Option<IdentityKey<DjbECKey>> {
     if let Some(key) = &self.structure.remote_identity_public {
       IdentityKey::from_raw(&key, 0).ok()
     } else {
@@ -183,7 +187,9 @@ impl SessionState<DjbECKey> {
     }
   }
 
-  pub fn get_local_identity_key(&self) -> Result<IdentityKey<K>, SignalError> {
+  pub fn get_local_identity_key(
+    &self,
+  ) -> Result<IdentityKey<DjbECKey>, SignalError> {
     if let Some(key) = &self.structure.local_identity_public {
       IdentityKey::from_raw(&key, 0)
     } else {
@@ -218,11 +224,14 @@ impl SessionState<DjbECKey> {
     }
   }
 
-  pub fn set_root_key<K: HKDF + Clone>(&mut self, key: &RootKey<K>) {
+  pub fn set_root_key<DjbECKey: HKDF + Clone>(
+    &mut self,
+    key: &RootKey<DjbECKey>,
+  ) {
     self.structure.remote_identity_public = Some(key.key().to_vec());
   }
 
-  pub fn get_sender_ratchet_key(&self) -> Result<K, SignalError> {
+  pub fn get_sender_ratchet_key(&self) -> Result<DjbECKey, SignalError> {
     if let Some(sender_chain) = &self.structure.sender_chain {
       if let Some(key) = &sender_chain.sender_ratchet_key {
         Curve::decode_point(&key, 0)
@@ -236,7 +245,7 @@ impl SessionState<DjbECKey> {
 
   pub fn get_sender_ratchet_key_pair(
     &self,
-  ) -> Result<ECKeyPair<K>, SignalError> {
+  ) -> Result<ECKeyPair<DjbECKey>, SignalError> {
     let public_key = self.get_sender_ratchet_key()?;
     if let Some(sender_chain) = &self.structure.sender_chain {
       if let Some(key) = &sender_chain.sender_ratchet_key_private {
@@ -254,13 +263,13 @@ impl SessionState<DjbECKey> {
 
   pub fn get_receiver_chain(
     &self,
-    sender_ephemeral: &K,
+    sender_ephemeral: &DjbECKey,
   ) -> Option<(Chain, usize)> {
     let receiver_chains = self.structure.receiver_chains.clone();
     for (i, receiver_chain) in receiver_chains.into_iter().enumerate() {
       let chain_sender_ratchet_key =
         receiver_chain.clone().sender_ratchet_key?;
-      let pub_key: K =
+      let pub_key: DjbECKey =
         Curve::decode_point(&chain_sender_ratchet_key, 0).ok()?;
       if pub_key == *sender_ephemeral {
         return Some((receiver_chain, i));
@@ -269,7 +278,7 @@ impl SessionState<DjbECKey> {
     None
   }
 
-  pub fn has_receiver_chain(&self, sender_ephemeral: &K) -> bool {
+  pub fn has_receiver_chain(&self, sender_ephemeral: &DjbECKey) -> bool {
     self.get_receiver_chain(sender_ephemeral).is_some()
   }
 
@@ -279,7 +288,7 @@ impl SessionState<DjbECKey> {
 
   pub fn get_receiver_chain_key(
     &self,
-    sender_ephemeral: &K,
+    sender_ephemeral: &DjbECKey,
   ) -> Option<Either<ChainKey<HKDFv2>, ChainKey<HKDFv3>>> {
     let receiver_chain_index = self.get_receiver_chain(sender_ephemeral);
     if let Some((chain, _index)) = receiver_chain_index {
@@ -306,7 +315,7 @@ impl SessionState<DjbECKey> {
 
   pub fn add_receiver_chain_key<H: HKDF>(
     &mut self,
-    sender_ratchet_key: &K,
+    sender_ratchet_key: &DjbECKey,
     chain_key: &ChainKey<H>,
   ) {
     let mut chain_key_structure = chain::ChainKey::default();
@@ -324,7 +333,7 @@ impl SessionState<DjbECKey> {
 
   pub fn set_sender_chain<H: HKDF>(
     &mut self,
-    sender_ratchet_key_pair: &ECKeyPair<K>,
+    sender_ratchet_key_pair: &ECKeyPair<DjbECKey>,
     chain_key: &ChainKey<H>,
   ) {
     let mut chain_key_structure = chain::ChainKey::default();
@@ -346,20 +355,26 @@ impl SessionState<DjbECKey> {
 
   pub fn set_sender_chain_key<H: HKDF>(key: ChainKey<H>) { unimplemented!() }
 
-  pub fn has_message_keys(sender_ephemeral: K, counter: u32) -> bool {
+  pub fn has_message_keys(sender_ephemeral: DjbECKey, counter: u32) -> bool {
     unimplemented!()
   }
 
-  pub fn remove_message_keys(sender_ephemeral: K, counter: u32) -> MessageKeys {
+  pub fn remove_message_keys(
+    sender_ephemeral: DjbECKey,
+    counter: u32,
+  ) -> MessageKeys {
     unimplemented!()
   }
 
-  pub fn set_message_keys(sender_ephemeral: K, message_keys: MessageKeys) {
+  pub fn set_message_keys(
+    sender_ephemeral: DjbECKey,
+    message_keys: MessageKeys,
+  ) {
     unimplemented!()
   }
 
   pub fn set_receiver_chain_key<H: HKDF>(
-    sender_ephemeral: K,
+    sender_ephemeral: DjbECKey,
     chain_key: ChainKey<H>,
   ) {
     unimplemented!()
@@ -367,9 +382,9 @@ impl SessionState<DjbECKey> {
 
   pub fn set_pending_key_exchange(
     sequence: i32,
-    our_base_key: ECKeyPair<K>,
-    our_ratchet_key: ECKeyPair<K>,
-    our_identity_key: IdentityKeyPair<K>,
+    our_base_key: ECKeyPair<DjbECKey>,
+    our_ratchet_key: ECKeyPair<DjbECKey>,
+    our_identity_key: IdentityKeyPair<DjbECKey>,
   ) {
     unimplemented!()
   }
@@ -378,24 +393,23 @@ impl SessionState<DjbECKey> {
     self
       .structure
       .pending_key_exchange
+      .clone()
       .ok_or_else(|| {
-        Err(SignalError::ProtoBufError(
-          "Missing Pending Key Exchange".into(),
-        ))
+        SignalError::ProtoBufError("Missing Pending Key Exchange".into())
       })?
       .sequence
-      .ok_or_else(|| Err(SignalError::ProtoBufError("Missing Sequence".into())))
+      .ok_or_else(|| SignalError::ProtoBufError("Missing Sequence".into()))
   }
 
   pub fn get_pending_key_exchange_base_key(
     &self,
-  ) -> Result<ECKeyPair<K>, SignalError> {
+  ) -> Result<ECKeyPair<DjbECKey>, SignalError> {
     unimplemented!()
   }
 
   pub fn get_pending_key_exchange_ratchet_key(
     &self,
-  ) -> Result<ECKeyPair<K>, SignalError> {
+  ) -> Result<ECKeyPair<DjbECKey>, SignalError> {
     unimplemented!()
   }
 
@@ -409,7 +423,7 @@ impl SessionState<DjbECKey> {
 
   pub fn get_unacknowledged_pre_key_message_items(
     &self,
-  ) -> Result<UnacknowledgedPreKeyMessageItems<K>, SignalError> {
+  ) -> Result<UnacknowledgedPreKeyMessageItems<DjbECKey>, SignalError> {
     unimplemented!()
   }
 
@@ -428,6 +442,7 @@ impl SessionState<DjbECKey> {
   pub fn get_local_registration_id(&self) -> Option<u32> {
     self.structure.local_registration_id
   }
+
   pub fn serialize(&self) -> Result<Vec<u8>, SignalError> {
     let mut result = Vec::new();
     self
@@ -496,9 +511,9 @@ impl SignedPreKeyRecord {
 #[derive(Clone, Debug, Getters)]
 pub struct SessionRecord {
   #[get = "pub"]
-  session_state: SessionState<DjbECKey>,
+  session_state: SessionState,
   #[get = "pub"]
-  previous_states: Vec<SessionState<DjbECKey>>,
+  previous_states: Vec<SessionState>,
   #[get = "pub"]
   fresh: bool,
 }
@@ -512,7 +527,7 @@ impl SessionRecord {
     }
   }
 
-  pub fn with_state(state: &SessionState<DjbECKey>) -> Self {
+  pub fn with_state(state: &SessionState) -> Self {
     Self {
       session_state: state.clone(),
       previous_states: Vec::new(),
@@ -543,7 +558,7 @@ impl SessionRecord {
     self.previous_states.clear();
   }
 
-  pub fn set_state(&mut self, state: SessionState<DjbECKey>) {
+  pub fn set_state(&mut self, state: SessionState) {
     self.session_state = state;
   }
 
@@ -591,7 +606,7 @@ impl SessionRecord {
     Ok(result)
   }
 
-  fn promote_state(&mut self, promoted_state: SessionState<DjbECKey>) {
+  fn promote_state(&mut self, promoted_state: SessionState) {
     self.previous_states.insert(0, self.session_state.clone());
     self.session_state = promoted_state;
     if self.previous_states.len() > ARCHIVED_STATES_MAX_LENGTH as usize {
@@ -746,6 +761,6 @@ pub trait SessionStore {
 }
 
 pub trait SignalProtocolStore<E: ECKey>:
-  IdentityKeyStore<E> + SignedPreKeyStore + PreKeyStore + SessionStore
+  IdentityKeyStore<E> + SignedPreKeyStore + PreKeyStore + SessionStore + Clone
 {
 }

@@ -1,5 +1,12 @@
 use std::fmt::{self, Display};
 
+use crate::{
+  ecc::ECKey,
+  state::{
+    IdentityKeyStore, PreKeyStore, SessionStore, SignalProtocolStore,
+    SignedPreKeyStore,
+  },
+};
 use getset::Getters;
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Hash, Getters)]
@@ -37,7 +44,36 @@ impl Display for SignalProtocolAddress {
 ///
 /// Remote logical users are identified by their `recipient_id`, and each
 /// logical `recipient_id` can have multiple physical devices.
-pub struct SessionBuilder {}
+pub struct SessionBuilder<E: ECKey> {
+  /// store the constructed session in
+  session_store: Box<SessionStore>,
+  /// where the client's local `PreKeyRecord`s are stored.
+  pre_key_store: Box<PreKeyStore>,
+  /// containing the client's `SignedPreKeyRecord` key information.
+  signed_pre_key_store: Box<SignedPreKeyStore>,
+  /// containing the client's identity key information.
+  identity_key_store: Box<IdentityKeyStore<E>>,
+  /// The address of the remote user to build a session with.
+  remote_address: SignalProtocolAddress,
+}
+
+impl<E: ECKey> SessionBuilder<E> {
+  pub fn new(
+    session_store: Box<SessionStore>,
+    pre_key_store: Box<PreKeyStore>,
+    signed_pre_key_store: Box<SignedPreKeyStore>,
+    identity_key_store: Box<IdentityKeyStore<E>>,
+    remote_address: SignalProtocolAddress,
+  ) -> Self {
+    Self {
+      session_store,
+      pre_key_store,
+      signed_pre_key_store,
+      identity_key_store,
+      remote_address,
+    }
+  }
+}
 
 /// The main entry point for Signal Protocol encrypt/decrypt operations.
 ///
