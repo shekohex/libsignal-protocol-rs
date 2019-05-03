@@ -1,0 +1,286 @@
+use crate::{
+  ecc::{Curve, ECKey, ECKeyPair},
+  error::SignalError,
+  kdf::{
+    DerivedMessageSecrets, DerivedRootSecrets, DERIVED_MESSAGE_SECRETS_SIZE,
+    DERIVED_ROOT_SECRETS_SIZE, HKDF,
+  },
+};
+use getset::Getters;
+use hmac::{Hmac, Mac};
+use sha2::Sha256;
+
+const CHAIN_KEY_SEED: [u8; 1] = [0x02];
+const MESSAGE_KEY_SEED: [u8; 1] = [0x01];
+
+// Create alias for HMAC-SHA256
+type HmacSha256 = Hmac<Sha256>;
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, Getters)]
+pub struct MessageKeys {
+  #[get = "pub"]
+  cipher_key: Vec<u8>,
+  #[get = "pub"]
+  mac_key: Vec<u8>,
+  #[get = "pub"]
+  iv: Vec<u8>,
+  #[get = "pub"]
+  counter: u32,
+}
+
+impl MessageKeys {
+  pub fn new(
+    cipher_key: &[u8],
+    mac_key: &[u8],
+    iv: &[u8],
+    counter: u32,
+  ) -> Self {
+    Self {
+      cipher_key: cipher_key.to_vec(),
+      mac_key: mac_key.to_vec(),
+      iv: iv.to_vec(),
+      counter,
+    }
+  }
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, Getters)]
+pub struct ChainKey<K: HKDF + Clone> {
+  #[get = "pub"]
+  kdf: K,
+  #[get = "pub"]
+  key: Vec<u8>,
+  #[get = "pub"]
+  index: u32,
+}
+
+impl<K: HKDF + Clone> ChainKey<K> {
+  pub fn new(kdf: K, key: &[u8], index: u32) -> Self {
+    Self {
+      kdf,
+      key: key.to_vec(),
+      index,
+    }
+  }
+
+  pub fn next_chain_key(&self) -> Self {
+    let next_key = self.get_base_material(&CHAIN_KEY_SEED);
+    Self::new(self.kdf.clone(), &next_key, self.index + 1)
+  }
+
+  pub fn message_keys(&self) -> Result<MessageKeys, SignalError> {
+    let input_key_material = self.get_base_material(&MESSAGE_KEY_SEED);
+    let key_material_bytes = K::derive_secrets(
+      &input_key_material,
+      None,
+      Some(b"WhisperMessageKeys"),
+      DERIVED_MESSAGE_SECRETS_SIZE as usize,
+    );
+    let key_material = DerivedMessageSecrets::new(&key_material_bytes)?;
+    Ok(MessageKeys::new(
+      &key_material.cipher_key(),
+      &key_material.mac_key(),
+      &key_material.iv(),
+      self.index,
+    ))
+  }
+
+  fn get_base_material(&self, seed: &[u8]) -> Vec<u8> {
+    let mut mac =
+      HmacSha256::new_varkey(&self.key).expect("HMAC can take key of any size");
+    mac.input(seed);
+    mac.result().code().to_vec()
+  }
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, Getters)]
+pub struct RootKey<K: HKDF + Clone> {
+  kdf: K,
+  #[get = "pub"]
+  key: Vec<u8>,
+}
+
+impl<K: HKDF + Clone> RootKey<K> {
+  pub fn new(kdf: K, key: &[u8]) -> Self {
+    Self {
+      kdf,
+      key: key.to_vec(),
+    }
+  }
+
+  pub fn create_chain<E: ECKey>(
+    &self,
+    their_ratchet_key: &E,
+    our_ratchet_key: &ECKeyPair<E>,
+  ) -> Result<(RootKey<K>, ChainKey<K>), SignalError> {
+    let shared_secret = Curve::calculate_agreement(
+      their_ratchet_key,
+      our_ratchet_key.private_key(),
+    )?;
+    let derived_secret_bytes = K::derive_secrets(
+      &shared_secret,
+      Some(&self.key),
+      Some(b"WhisperRatchet"),
+      DERIVED_ROOT_SECRETS_SIZE as usize,
+    );
+    let derived_secret = DerivedRootSecrets::new(&derived_secret_bytes)?;
+    let root_key = RootKey::new(self.kdf.clone(), derived_secret.root_key());
+    let chain_key =
+      ChainKey::new(self.kdf.clone(), derived_secret.chain_key(), 0);
+    Ok((root_key, chain_key))
+  }
+}
+
+#[cfg(test)]
+mod test_retchet {
+  use super::*;
+  use crate::{
+    ecc::DjbECKey,
+    kdf::{HKDFv2, HKDFv3},
+  };
+  #[test]
+  fn test_chain_key_v2() {
+    let seed = [
+      0x8a, 0xb7, 0x2d, 0x6f, 0x4c, 0xc5, 0xac, 0x0d, 0x38, 0x7e, 0xaf, 0x46,
+      0x33, 0x78, 0xdd, 0xb2, 0x8e, 0xdd, 0x07, 0x38, 0x5b, 0x1c, 0xb0, 0x12,
+      0x50, 0xc7, 0x15, 0x98, 0x2e, 0x7a, 0xd4, 0x8f,
+    ];
+
+    let message_key = [
+      0x02, 0xa9, 0xaa, 0x6c, 0x7d, 0xbd, 0x64, 0xf9, 0xd3, 0xaa, 0x92, 0xf9,
+      0x2a, 0x27, 0x7b, 0xf5, 0x46, 0x09, 0xda, 0xdf, 0x0b, 0x00, 0x82, 0x8a,
+      0xcf, 0xc6, 0x1e, 0x3c, 0x72, 0x4b, 0x84, 0xa7,
+    ];
+
+    let mac_key = [
+      0xbf, 0xbe, 0x5e, 0xfb, 0x60, 0x30, 0x30, 0x52, 0x67, 0x42, 0xe3, 0xee,
+      0x89, 0xc7, 0x02, 0x4e, 0x88, 0x4e, 0x44, 0x0f, 0x1f, 0xf3, 0x76, 0xbb,
+      0x23, 0x17, 0xb2, 0xd6, 0x4d, 0xeb, 0x7c, 0x83,
+    ];
+
+    let next_chain_key = [
+      0x28, 0xe8, 0xf8, 0xfe, 0xe5, 0x4b, 0x80, 0x1e, 0xef, 0x7c, 0x5c, 0xfb,
+      0x2f, 0x17, 0xf3, 0x2c, 0x7b, 0x33, 0x44, 0x85, 0xbb, 0xb7, 0x0f, 0xac,
+      0x6e, 0xc1, 0x03, 0x42, 0xa2, 0x46, 0xd1, 0x5d,
+    ];
+    let chain_key = ChainKey::new(HKDFv2, &seed, 0);
+    assert_eq!(chain_key.key(), &seed.to_vec());
+    assert_eq!(
+      chain_key.message_keys().unwrap().cipher_key(),
+      &message_key.to_vec()
+    );
+    assert_eq!(
+      chain_key.message_keys().unwrap().mac_key(),
+      &mac_key.to_vec()
+    );
+    assert_eq!(chain_key.next_chain_key().key(), &next_chain_key.to_vec());
+    assert_eq!(chain_key.next_chain_key().index(), &1);
+    assert_eq!(
+      chain_key.next_chain_key().message_keys().unwrap().counter(),
+      &1
+    );
+    assert_eq!(chain_key.index(), &0);
+    assert_eq!(chain_key.message_keys().unwrap().counter(), &0);
+  }
+
+  #[test]
+  fn test_chain_key_v3() {
+    let seed = [
+      0x8a, 0xb7, 0x2d, 0x6f, 0x4c, 0xc5, 0xac, 0x0d, 0x38, 0x7e, 0xaf, 0x46,
+      0x33, 0x78, 0xdd, 0xb2, 0x8e, 0xdd, 0x07, 0x38, 0x5b, 0x1c, 0xb0, 0x12,
+      0x50, 0xc7, 0x15, 0x98, 0x2e, 0x7a, 0xd4, 0x8f,
+    ];
+
+    let message_key = [
+      0xbf, 0x51, 0xe9, 0xd7, 0x5e, 0x0e, 0x31, 0x03, 0x10, 0x51, 0xf8, 0x2a,
+      0x24, 0x91, 0xff, 0xc0, 0x84, 0xfa, 0x29, 0x8b, 0x77, 0x93, 0xbd, 0x9d,
+      0xb6, 0x20, 0x05, 0x6f, 0xeb, 0xf4, 0x52, 0x17,
+    ];
+
+    let mac_key = [
+      0xc6, 0xc7, 0x7d, 0x6a, 0x73, 0xa3, 0x54, 0x33, 0x7a, 0x56, 0x43, 0x5e,
+      0x34, 0x60, 0x7d, 0xfe, 0x48, 0xe3, 0xac, 0xe1, 0x4e, 0x77, 0x31, 0x4d,
+      0xc6, 0xab, 0xc1, 0x72, 0xe7, 0xa7, 0x03, 0x0b,
+    ];
+
+    let next_chain_key = [
+      0x28, 0xe8, 0xf8, 0xfe, 0xe5, 0x4b, 0x80, 0x1e, 0xef, 0x7c, 0x5c, 0xfb,
+      0x2f, 0x17, 0xf3, 0x2c, 0x7b, 0x33, 0x44, 0x85, 0xbb, 0xb7, 0x0f, 0xac,
+      0x6e, 0xc1, 0x03, 0x42, 0xa2, 0x46, 0xd1, 0x5d,
+    ];
+    let chain_key = ChainKey::new(HKDFv3, &seed, 0);
+    assert_eq!(chain_key.key(), &seed.to_vec());
+    assert_eq!(
+      chain_key.message_keys().unwrap().cipher_key(),
+      &message_key.to_vec()
+    );
+    assert_eq!(
+      chain_key.message_keys().unwrap().mac_key(),
+      &mac_key.to_vec()
+    );
+    assert_eq!(chain_key.next_chain_key().key(), &next_chain_key.to_vec());
+    assert_eq!(chain_key.next_chain_key().index(), &1);
+    assert_eq!(
+      chain_key.next_chain_key().message_keys().unwrap().counter(),
+      &1
+    );
+    assert_eq!(chain_key.index(), &0);
+    assert_eq!(chain_key.message_keys().unwrap().counter(), &0);
+  }
+
+  #[test]
+  fn test_root_key_v2() {
+    let root_key_seed = [
+      0x7b, 0xa6, 0xde, 0xbc, 0x2b, 0xc1, 0xbb, 0xf9, 0x1a, 0xbb, 0xc1, 0x36,
+      0x74, 0x04, 0x17, 0x6c, 0xa6, 0x23, 0x09, 0x5b, 0x7e, 0xc6, 0x6b, 0x45,
+      0xf6, 0x02, 0xd9, 0x35, 0x38, 0x94, 0x2d, 0xcc,
+    ];
+
+    let alice_public = [
+      0x05, 0xee, 0x4f, 0xa6, 0xcd, 0xc0, 0x30, 0xdf, 0x49, 0xec, 0xd0, 0xba,
+      0x6c, 0xfc, 0xff, 0xb2, 0x33, 0xd3, 0x65, 0xa2, 0x7f, 0xad, 0xbe, 0xff,
+      0x77, 0xe9, 0x63, 0xfc, 0xb1, 0x62, 0x22, 0xe1, 0x3a,
+    ];
+
+    let alice_private = [
+      0x21, 0x68, 0x22, 0xec, 0x67, 0xeb, 0x38, 0x04, 0x9e, 0xba, 0xe7, 0xb9,
+      0x39, 0xba, 0xea, 0xeb, 0xb1, 0x51, 0xbb, 0xb3, 0x2d, 0xb8, 0x0f, 0xd3,
+      0x89, 0x24, 0x5a, 0xc3, 0x7a, 0x94, 0x8e, 0x50,
+    ];
+
+    let bob_public = [
+      0x05, 0xab, 0xb8, 0xeb, 0x29, 0xcc, 0x80, 0xb4, 0x71, 0x09, 0xa2, 0x26,
+      0x5a, 0xbe, 0x97, 0x98, 0x48, 0x54, 0x06, 0xe3, 0x2d, 0xa2, 0x68, 0x93,
+      0x4a, 0x95, 0x55, 0xe8, 0x47, 0x57, 0x70, 0x8a, 0x30,
+    ];
+
+    let next_root = [
+      0xb1, 0x14, 0xf5, 0xde, 0x28, 0x01, 0x19, 0x85, 0xe6, 0xeb, 0xa2, 0x5d,
+      0x50, 0xe7, 0xec, 0x41, 0xa9, 0xb0, 0x2f, 0x56, 0x93, 0xc5, 0xc7, 0x88,
+      0xa6, 0x3a, 0x06, 0xd2, 0x12, 0xa2, 0xf7, 0x31,
+    ];
+
+    let next_chain = [
+      0x9d, 0x7d, 0x24, 0x69, 0xbc, 0x9a, 0xe5, 0x3e, 0xe9, 0x80, 0x5a, 0xa3,
+      0x26, 0x4d, 0x24, 0x99, 0xa3, 0xac, 0xe8, 0x0f, 0x4c, 0xca, 0xe2, 0xda,
+      0x13, 0x43, 0x0c, 0x5c, 0x55, 0xb5, 0xca, 0x5f,
+    ];
+
+    let alice_public_key: DjbECKey =
+      Curve::decode_point(&alice_public, 0).unwrap();
+    let alice_private_key: DjbECKey =
+      Curve::decode_private_point(&alice_private);
+    let alice_pair_key = ECKeyPair::new(alice_public_key, alice_private_key);
+
+    let bob_public_key: DjbECKey = Curve::decode_point(&bob_public, 0).unwrap();
+
+    let root_key = RootKey::new(HKDFv2, &root_key_seed);
+    let root_key_chain_key_pair = root_key
+      .create_chain(&bob_public_key, &alice_pair_key)
+      .unwrap();
+
+    assert_eq!(root_key.key(), &root_key_seed.to_vec());
+    assert_eq!(root_key_chain_key_pair.0.key(), &next_root.to_vec());
+    assert_eq!(root_key_chain_key_pair.1.key(), &next_chain.to_vec());
+  }
+}

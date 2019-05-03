@@ -1,7 +1,11 @@
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn it_works() {
-        assert_eq!(2 + 2, 4);
-    }
-}
+pub mod devices;
+pub mod ecc;
+mod error;
+pub mod identity_key;
+mod kdf;
+pub mod key_helper;
+mod protos;
+pub mod ratchet;
+pub mod signal;
+pub mod state;
+mod utils;

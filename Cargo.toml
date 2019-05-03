@@ -5,3 +5,14 @@ authors = ["Shady Khalifa <shekohex@gmail.com>"]
 edition = "2018"
 
 [dependencies]
+curve25519 = { path = './curve25519' }
+failure = "0.1.4"
+sha2 = "0.8.0"
+getset = "0.0.6"
+prost = "0.4.0"
+bytes = "0.4.11"
+prost-derive = "0.4.0"
+rand = "0.6.1"
+aes = "0.3.2"
+hmac = "0.7.0"
+either = "1.5.0"
